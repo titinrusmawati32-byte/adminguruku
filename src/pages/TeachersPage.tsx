@@ -451,7 +451,7 @@ export const TeachersPage: React.FC<TeachersPageProps> = ({ onSelectTab }) => {
           nip: formData.nip.trim(),
           phone: formData.phone.trim(),
           email: formData.email.trim(),
-          assignedClasses: formData.assignedClasses,
+          assignedClasses: formData.isHomeroom && formData.homeroomClass ? [formData.homeroomClass] : [],
           assignedSubjects: formData.assignedSubjects,
           isHomeroom: formData.isHomeroom,
           homeroomClass: formData.isHomeroom ? formData.homeroomClass : '',
@@ -473,7 +473,7 @@ export const TeachersPage: React.FC<TeachersPageProps> = ({ onSelectTab }) => {
           nip: formData.nip.trim(),
           phone: formData.phone.trim(),
           email: formData.email.trim(),
-          assignedClasses: formData.assignedClasses,
+          assignedClasses: formData.isHomeroom && formData.homeroomClass ? [formData.homeroomClass] : [],
           assignedSubjects: formData.assignedSubjects,
           isHomeroom: formData.isHomeroom,
           homeroomClass: formData.isHomeroom ? formData.homeroomClass : '',
@@ -1265,114 +1265,6 @@ export const TeachersPage: React.FC<TeachersPageProps> = ({ onSelectTab }) => {
                   ))}
                 </select>
               </div>
-            )}
-          </div>
-
-          {/* Penugasan Rombel Kelas SD (Kelas 1 - Kelas 6) */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="block font-semibold text-slate-700 dark:text-slate-300">
-                Penugasan Rombel SD (Mengajar di kelas mana saja):
-              </label>
-              <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
-                <button
-                  type="button"
-                  onClick={handleSelectAllSDClasses}
-                  className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 hover:bg-blue-100 font-bold cursor-pointer"
-                >
-                  Semua (1-6)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectFaseA}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-medium cursor-pointer"
-                >
-                  Fase A (1-2)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectFaseB}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-medium cursor-pointer"
-                >
-                  Fase B (3-4)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSelectFaseC}
-                  className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 font-medium cursor-pointer"
-                >
-                  Fase C (5-6)
-                </button>
-                <button
-                  type="button"
-                  onClick={handleClearClasses}
-                  className="px-2 py-0.5 rounded-lg text-slate-500 hover:text-rose-600 font-medium cursor-pointer"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
-
-            {/* Grouped by SD Grade 1 to 6 */}
-            <div className="space-y-2 max-h-56 overflow-y-auto p-2 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-              {groupedSDClasses.map((group) => {
-                const groupClassNames = group.classes.map((c) => c.name);
-                const allChecked =
-                  groupClassNames.length > 0 &&
-                  groupClassNames.every((c) => formData.assignedClasses.includes(c));
-
-                return (
-                  <div
-                    key={group.grade}
-                    className="p-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700"
-                  >
-                    <div className="flex items-center justify-between mb-1.5 pb-1 border-b border-slate-100 dark:border-slate-700">
-                      <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-blue-500" />
-                        {group.label}
-                        <span className="text-[10px] font-normal text-slate-400">({group.fase})</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleGradeGroup(groupClassNames)}
-                        className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
-                      >
-                        {allChecked ? 'Batal Semua' : 'Pilih Semua'}
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                      {group.classes.map((cls) => {
-                        const checked = formData.assignedClasses.includes(cls.name);
-                        return (
-                          <label
-                            key={cls.classId}
-                            className={`flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors text-[11px] ${
-                              checked
-                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold border border-blue-200 dark:border-blue-800'
-                                : 'bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 hover:bg-slate-100'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={() => handleToggleClass(cls.name)}
-                              className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            />
-                            <span className="truncate">{cls.name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {formData.assignedClasses.length > 0 && (
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                Dipilih: <span className="font-semibold text-blue-600 dark:text-blue-400">{formData.assignedClasses.length} rombel</span> ({formData.assignedClasses.join(', ')})
-              </p>
             )}
           </div>
 
