@@ -1,0 +1,10 @@
+{
+  "name": "Remix Remix Remix Remix ADMIN GURU - WebApp Administrasi Guru Terintegrasi",
+  "description": "Aplikasi administrasi aktivitas guru modern, premium, dan terintegrasi untuk mengelola data siswa, jadwal, absensi, penilaian, agenda mengajar, dan bimbingan.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
