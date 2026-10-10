@@ -47,6 +47,7 @@ export const AttendancePage: React.FC = () => {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
+  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [existingRecords, setExistingRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -91,12 +92,14 @@ export const AttendancePage: React.FC = () => {
     const init = async () => {
       setLoading(true);
       try {
-        const [cls, sch] = await Promise.all([
+        const [cls, sch, allStu] = await Promise.all([
           classService.getAll(),
           scheduleService.getAll(),
+          studentService.getAll(),
         ]);
         setClasses(cls);
         setSchedules(sch);
+        setAllStudents(allStu);
 
         const permitted = role === 'admin' ? cls : authorizationService.filterClassesForUser(cls, profile);
 
@@ -200,10 +203,10 @@ export const AttendancePage: React.FC = () => {
   }, [schedules, selectedScheduleId]);
 
   // Handle Scan QR Success Callback
-  const handleRecordSuccess = async (student: Student, scanTime: string) => {
+  const handleRecordSuccess = async (student: Student, scanTime: string): Promise<{ isDuplicate?: boolean; status?: string } | void> => {
     const docId = `${selectedDate}_${selectedClassId}_${student.studentId}_${currentSchedule?.subjectId || 'general'}`;
 
-    await attendanceService.recordScan({
+    const res = await attendanceService.recordScan({
       scheduleId: selectedScheduleId || undefined,
       classId: selectedClassId,
       className: currentClass?.name || selectedClassId,
@@ -217,7 +220,11 @@ export const AttendancePage: React.FC = () => {
       status: 'Hadir',
       notes: `Scan QR Presensi Mandiri (${scanTime})`,
       method: 'qr',
-    });
+    }, profile);
+
+    if (res?.isDuplicate) {
+      return { isDuplicate: true, status: res.existingStatus };
+    }
 
     await auditService.log(
       'Scan Presensi QR',
@@ -227,6 +234,7 @@ export const AttendancePage: React.FC = () => {
     );
 
     showToast(`Presensi berhasil: ${student.name} (Hadir)`, 'success');
+    return { isDuplicate: false, status: 'Hadir' };
   };
 
   // Handle Quick Status Change in Realtime Feed
@@ -560,11 +568,12 @@ export const AttendancePage: React.FC = () => {
 
       {/* VIEW MODE 1: SCANNER KAMERA QR (PRIMARY FOCUS) */}
       {viewMode === 'scanner' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Live Camera Scanner (60% Desktop / 7 Cols) */}
-          <div className="lg:col-span-7">
+        <div className="flex flex-col lg:flex-row gap-5 xl:gap-6 items-start w-full">
+          {/* Left Column: Live Camera Scanner (62-63% on Desktop) */}
+          <div className="w-full lg:w-[62%] xl:w-[63%] shrink-0">
             <QrScannerView
               students={students}
+              allStudents={allStudents}
               existingRecords={existingRecords}
               selectedClassId={selectedClassId}
               selectedClassName={currentClass?.name}
@@ -576,11 +585,12 @@ export const AttendancePage: React.FC = () => {
             />
           </div>
 
-          {/* Right Column: Real-time Live Attendance Feed (40% Desktop / 5 Cols) */}
-          <div className="lg:col-span-5 h-full">
+          {/* Right Column: Real-time Live Attendance Feed (37-38% on Desktop) */}
+          <div className="w-full lg:w-[38%] xl:w-[37%] flex-1">
             <AttendanceRealtimeFeed
               students={students}
               records={existingRecords}
+              syncStatus={saving ? 'saving' : 'connected'}
               onQuickStatusChange={handleQuickStatusChange}
               onMarkStudentPresent={handleMarkStudentPresent}
             />

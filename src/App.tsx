@@ -1,5 +1,5 @@
 import { GraduationCap } from 'lucide-react';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Layout } from './components/layout/Layout';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -8,6 +8,30 @@ import { LoginPage } from './pages/LoginPage';
 
 const AppContent: React.FC = () => {
   const { firebaseUser, profile, loading } = useAuth();
+
+  // Memicu persetujuan akses kamera resmi dari platform AI Studio / Browser di awal aplikasi
+  useEffect(() => {
+    const requestStartupCamera = async () => {
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: { ideal: 'environment' } },
+          });
+          // Matikan stream setelah izin diperoleh agar lampu indikator kamera tidak menyala terus
+          stream.getTracks().forEach((track) => track.stop());
+          localStorage.setItem('admin_guru_camera_consented', 'granted');
+        } catch (err) {
+          console.warn('Startup camera access notice:', err);
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      requestStartupCamera();
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   if (loading) {
     return (

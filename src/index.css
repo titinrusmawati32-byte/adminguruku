@@ -91,3 +91,29 @@
   }
 }
 
+/* Camera QR Video Sizing & Framing */
+#qr-interactive-camera-box {
+  width: 100% !important;
+  height: 100% !important;
+  position: relative !important;
+  border-radius: 1.5rem !important;
+  overflow: hidden !important;
+  background-color: #000000 !important;
+}
+
+#qr-interactive-camera-box video {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 1.5rem !important;
+}
+
+#qr-interactive-camera-box.contain-mode video {
+  object-fit: contain !important;
+}
+
+#qr-interactive-camera-box img[alt="Info icon"],
+#qr-interactive-camera-box div[style*="text-align: center"] {
+  display: none !important;
+}
+

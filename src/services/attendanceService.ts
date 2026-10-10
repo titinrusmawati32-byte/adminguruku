@@ -5,6 +5,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -204,7 +205,7 @@ export const attendanceService = {
   async recordScan(
     record: Omit<AttendanceRecord, 'attendanceId' | 'createdAt' | 'updatedAt'>,
     currentUser?: UserProfile | null
-  ): Promise<string> {
+  ): Promise<{ attendanceId: string; isDuplicate: boolean; existingStatus?: AttendanceStatus; existingTime?: string }> {
     if (currentUser && currentUser.role === 'guru') {
       await authorizationService.assertTeacherAuthorizedForClass(
         currentUser,
@@ -213,16 +214,37 @@ export const attendanceService = {
       );
     }
 
+    const docId = `${record.date}_${record.classId}_${record.studentId}_${record.subjectId || 'general'}`;
+    const docRef = doc(db, 'attendance', docId);
+
     try {
-      const docId = `${record.date}_${record.classId}_${record.studentId}_${record.subjectId || 'general'}`;
-      await setDoc(doc(db, 'attendance', docId), {
-        ...record,
-        attendanceId: docId,
-        method: 'qr',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+      const result = await runTransaction(db, async (transaction) => {
+        const existingDoc = await transaction.get(docRef);
+        if (existingDoc.exists()) {
+          const data = existingDoc.data();
+          return {
+            attendanceId: docId,
+            isDuplicate: true,
+            existingStatus: data.status as AttendanceStatus,
+            existingTime: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+          };
+        }
+
+        transaction.set(docRef, {
+          ...record,
+          attendanceId: docId,
+          method: 'qr',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+
+        return {
+          attendanceId: docId,
+          isDuplicate: false,
+        };
       });
-      return docId;
+
+      return result;
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'attendance');
     }
