@@ -144,17 +144,18 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
   const totalPresensi = todayAttendance.length;
   const attendanceRate = totalPresensi > 0 ? Math.round((hadirCount / totalPresensi) * 100) : 100;
 
-  // Chart Data: Attendance Distribution
+  // Chart Data: Attendance Distribution (Murni data presensi hari ini)
   const attendanceDistributionData = [
-    { name: 'Hadir', value: hadirCount || (totalPresensi === 0 ? 25 : 0) },
-    { name: 'Sakit', value: sakitCount || (totalPresensi === 0 ? 2 : 0) },
-    { name: 'Izin', value: izinCount || (totalPresensi === 0 ? 1 : 0) },
-    { name: 'Alpa', value: alpaCount || (totalPresensi === 0 ? 0 : 0) },
+    { name: 'Hadir', value: hadirCount },
+    { name: 'Sakit', value: sakitCount },
+    { name: 'Izin', value: izinCount },
+    { name: 'Alpa', value: alpaCount },
   ].filter((item) => item.value > 0);
 
-  // Chart Data: Attendance Trend (grouped by last 7 recorded dates)
+  // Chart Data: Attendance Trend (grouped by last 7 recorded dates from Firestore)
   const dateGroups: Record<string, { hadir: number; total: number }> = {};
   attendance.forEach((a) => {
+    if (!a.date) return;
     if (!dateGroups[a.date]) dateGroups[a.date] = { hadir: 0, total: 0 };
     dateGroups[a.date].total++;
     if (a.status === 'Hadir') dateGroups[a.date].hadir++;
@@ -165,24 +166,21 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
     .slice(-7)
     .map(([date, counts]) => ({
       tanggal: date.slice(5),
-      kehadiran: Math.round((counts.hadir / counts.total) * 100),
+      kehadiran: counts.total > 0 ? Math.round((counts.hadir / counts.total) * 100) : 0,
     }));
 
-  if (attendanceTrendData.length === 0) {
-    attendanceTrendData.push(
-      { tanggal: 'Senin', kehadiran: 96 },
-      { tanggal: 'Selasa', kehadiran: 94 },
-      { tanggal: 'Rabu', kehadiran: 98 },
-      { tanggal: 'Kamis', kehadiran: 92 },
-      { tanggal: 'Jumat', kehadiran: 95 }
-    );
-  }
+  const avgAttendanceRate = attendanceTrendData.length > 0
+    ? Math.round(
+        attendanceTrendData.reduce((acc, curr) => acc + curr.kehadiran, 0) /
+          attendanceTrendData.length
+      )
+    : 0;
 
-  // Chart Data: Subject Average Scores
-  const subjectScoresData = subjects.slice(0, 6).map((sub) => {
-    const subAss = assessments.filter((a) => a.subjectId === sub.subjectId);
-    let avg = 0;
-    if (subAss.length > 0) {
+  // Chart Data: Subject Average Scores (Murni dari nilai asesmen tersimpan)
+  const subjectScoresData = subjects
+    .map((sub) => {
+      const subAss = assessments.filter((a) => a.subjectId === sub.subjectId);
+      if (subAss.length === 0) return null;
       let sum = 0;
       let count = 0;
       subAss.forEach((a) => {
@@ -191,15 +189,14 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
           count++;
         });
       });
-      avg = count > 0 ? Math.round(sum / count) : 80;
-    } else {
-      avg = 82; // representative placeholder
-    }
-    return {
-      mapel: sub.name.length > 12 ? sub.name.slice(0, 10) + '...' : sub.name,
-      rataRata: avg,
-    };
-  });
+      const avg = count > 0 ? Math.round(sum / count) : 0;
+      if (avg <= 0) return null;
+      return {
+        mapel: sub.name.length > 12 ? sub.name.slice(0, 10) + '...' : sub.name,
+        rataRata: avg,
+      };
+    })
+    .filter((item): item is { mapel: string; rataRata: number } => item !== null);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -527,63 +524,31 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
                 Persentase presensi harian per periode aktif
               </p>
             </div>
-            <span className="text-xs text-[#102A50] dark:text-[#FFD675] font-semibold bg-[#D9A62E]/15 px-2.5 py-1 rounded-lg border border-[#D9A62E]/25">
-              Rata-rata 95%
-            </span>
+            {attendanceTrendData.length > 0 ? (
+              <span className="text-xs text-[#102A50] dark:text-[#FFD675] font-semibold bg-[#D9A62E]/15 px-2.5 py-1 rounded-lg border border-[#D9A62E]/25">
+                Rata-rata {avgAttendanceRate}%
+              </span>
+            ) : (
+              <span className="text-xs text-[#66758A] dark:text-[#B4C1D4] font-medium bg-[#ECE9E1]/60 dark:bg-[#071225] px-2.5 py-1 rounded-lg">
+                Belum Ada Data
+              </span>
+            )}
           </div>
-          <div className="h-64 sm:h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={attendanceTrendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
-                <XAxis dataKey="tanggal" stroke="#64748b" fontSize={11} />
-                <YAxis domain={[60, 100]} stroke="#64748b" fontSize={11} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#071225',
-                    borderColor: '#263B58',
-                    borderRadius: '12px',
-                    color: '#F5F7FC',
-                    fontSize: '12px',
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="kehadiran"
-                  stroke="#D9A62E"
-                  strokeWidth={3}
-                  dot={{ r: 4, fill: '#D9A62E' }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Pie Chart: Status Presensi Hari Ini */}
-        <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#10223D] border border-[#E0E5EC] dark:border-[#263B58] shadow-xs flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm sm:text-base font-bold text-[#172A45] dark:text-[#F5F7FC]">
-              Presensi Hari Ini
-            </h3>
-            <p className="text-xs text-[#66758A] dark:text-[#B4C1D4]">
-              Total {totalPresensi} presensi tercatat
-            </p>
-
-            <div className="h-52 w-full mt-2">
+          {attendanceTrendData.length === 0 ? (
+            <div className="h-64 sm:h-72 w-full flex flex-col items-center justify-center text-center p-6 border border-dashed border-[#E0E5EC] dark:border-[#263B58] rounded-2xl">
+              <UserCheck className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2" />
+              <p className="text-sm font-bold text-[#172A45] dark:text-[#F5F7FC]">Belum Ada Riwayat Presensi</p>
+              <p className="text-xs text-[#66758A] dark:text-[#B4C1D4] max-w-xs mt-1">
+                Grafik tren kehadiran akan muncul dan menyesuaikan otomatis setelah presensi siswa dicatat atau diinput.
+              </p>
+            </div>
+          ) : (
+            <div className="h-64 sm:h-72 w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={attendanceDistributionData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={75}
-                    paddingAngle={4}
-                    dataKey="value"
-                  >
-                    {attendanceDistributionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
+                <LineChart data={attendanceTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
+                  <XAxis dataKey="tanggal" stroke="#64748b" fontSize={11} />
+                  <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: '#071225',
@@ -593,9 +558,69 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
                       fontSize: '12px',
                     }}
                   />
-                </PieChart>
+                  <Line
+                    type="monotone"
+                    dataKey="kehadiran"
+                    stroke="#D9A62E"
+                    strokeWidth={3}
+                    dot={{ r: 4, fill: '#D9A62E' }}
+                  />
+                </LineChart>
               </ResponsiveContainer>
             </div>
+          )}
+        </div>
+
+        {/* Pie Chart: Status Presensi Hari Ini */}
+        <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#10223D] border border-[#E0E5EC] dark:border-[#263B58] shadow-xs flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-[#172A45] dark:text-[#F5F7FC]">
+              Presensi Hari Ini
+            </h3>
+            <p className="text-xs text-[#66758A] dark:text-[#B4C1D4]">
+              {totalPresensi > 0
+                ? `Total ${totalPresensi} presensi tercatat hari ini`
+                : 'Belum ada presensi siswa yang dicatat hari ini'}
+            </p>
+
+            {totalPresensi === 0 ? (
+              <div className="h-52 w-full flex flex-col items-center justify-center text-center p-4 border border-dashed border-[#E0E5EC] dark:border-[#263B58] rounded-2xl my-2">
+                <CheckCircle className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                <p className="text-xs font-bold text-[#172A45] dark:text-[#F5F7FC]">Belum Ada Presensi Hari Ini</p>
+                <p className="text-[11px] text-[#66758A] dark:text-[#B4C1D4] mt-0.5">
+                  Grafik lingkaran status kehadiran akan menyesuaikan begitu presensi siswa dicatat.
+                </p>
+              </div>
+            ) : (
+              <div className="h-52 w-full mt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={attendanceDistributionData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={75}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {attendanceDistributionData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#071225',
+                        borderColor: '#263B58',
+                        borderRadius: '12px',
+                        color: '#F5F7FC',
+                        fontSize: '12px',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#E0E5EC] dark:border-[#263B58]">
@@ -639,25 +664,35 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
               Lihat Detail <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
-          <div className="h-60 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={subjectScoresData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
-                <XAxis dataKey="mapel" stroke="#64748b" fontSize={11} />
-                <YAxis domain={[50, 100]} stroke="#64748b" fontSize={11} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#071225',
-                    borderColor: '#263B58',
-                    borderRadius: '12px',
-                    color: '#F5F7FC',
-                    fontSize: '12px',
-                  }}
-                />
-                <Bar dataKey="rataRata" fill="#102A50" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {subjectScoresData.length === 0 ? (
+            <div className="h-60 w-full flex flex-col items-center justify-center text-center p-6 border border-dashed border-[#E0E5EC] dark:border-[#263B58] rounded-2xl">
+              <BookOpen className="w-10 h-10 text-slate-300 dark:text-slate-600 mb-2" />
+              <p className="text-sm font-bold text-[#172A45] dark:text-[#F5F7FC]">Belum Ada Nilai Asesmen</p>
+              <p className="text-xs text-[#66758A] dark:text-[#B4C1D4] max-w-xs mt-1">
+                Grafik pencapaian nilai akan otomatis menyesuaikan berdasarkan nilai asesmen yang tersimpan di Firestore.
+              </p>
+            </div>
+          ) : (
+            <div className="h-60 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={subjectScoresData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#94a3b8" opacity={0.2} />
+                  <XAxis dataKey="mapel" stroke="#64748b" fontSize={11} />
+                  <YAxis domain={[0, 100]} stroke="#64748b" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#071225',
+                      borderColor: '#263B58',
+                      borderRadius: '12px',
+                      color: '#F5F7FC',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Bar dataKey="rataRata" fill="#102A50" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
         {/* Today's Schedule & "Mulai Mengajar" Card */}

@@ -42,6 +42,10 @@ class MemoryCache {
       }
     }
   }
+
+  clear(): void {
+    this.cache.clear();
+  }
 }
 
 export const memoryCache = new MemoryCache();

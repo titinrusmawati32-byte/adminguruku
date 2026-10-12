@@ -276,6 +276,21 @@ export const AttendancePage: React.FC = () => {
     await handleRecordSuccess(student, currentTime);
   };
 
+  // Handle Delete Attendance Record
+  const handleDeleteRecord = async (record: AttendanceRecord) => {
+    try {
+      await attendanceService.delete(record.attendanceId);
+      setAttendanceMap((prev) => {
+        const next = { ...prev };
+        delete next[record.studentId];
+        return next;
+      });
+      showToast(`Data presensi untuk ${record.studentName} berhasil dihapus dari server.`, 'success');
+    } catch (err: any) {
+      showToast('Gagal menghapus presensi: ' + err.message, 'error');
+    }
+  };
+
   // Table View status update
   const handleStatusChangeInTable = (studentId: string, status: AttendanceStatus) => {
     setAttendanceMap((prev) => ({
@@ -585,6 +600,7 @@ export const AttendancePage: React.FC = () => {
               syncStatus={saving ? 'saving' : 'connected'}
               onQuickStatusChange={handleQuickStatusChange}
               onMarkStudentPresent={handleMarkStudentPresent}
+              onDeleteRecord={handleDeleteRecord}
             />
           </div>
         </div>

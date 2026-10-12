@@ -80,6 +80,42 @@ export const StudentsPage: React.FC = () => {
     status: 'active' as 'active' | 'inactive',
   });
 
+  const [isPurgeSampleModalOpen, setIsPurgeSampleModalOpen] = useState(false);
+
+  // Detect system demo/sample students
+  const sampleStudentsCount = useMemo(() => {
+    return students.filter(
+      (s) =>
+        s.studentId.startsWith('STU-1A-') ||
+        s.studentId.startsWith('STU-2A-') ||
+        s.studentId.startsWith('STU-6A-') ||
+        ['24101', '24102', '24103', '24104', '24105', '23101', '23102', '23103', '23104', '23105', '20031', '20032', '20033', '20034', '20035'].includes(s.nis)
+    ).length;
+  }, [students]);
+
+  const handlePurgeSampleStudents = async () => {
+    setActionLoading(true);
+    try {
+      const res = await studentService.removeSampleStudents();
+      showToast(
+        `Berhasil membersihkan server: ${res.studentsRemoved} siswa contoh, ${res.attendanceCleaned} presensi contoh, dan ${res.assessmentsCleaned} nilai terkait telah dihapus tuntas dari database server.`,
+        'success'
+      );
+      await auditService.log(
+        'Bersihkan Data Demo',
+        'students',
+        'all',
+        `Menghapus ${res.studentsRemoved} siswa demo, ${res.attendanceCleaned} presensi demo secara permanen dari server`
+      );
+      await loadData();
+    } catch (err: any) {
+      showToast('Gagal membersihkan data contoh: ' + err.message, 'error');
+    } finally {
+      setActionLoading(false);
+      setIsPurgeSampleModalOpen(false);
+    }
+  };
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -208,15 +244,31 @@ export const StudentsPage: React.FC = () => {
     if (!studentToDelete) return;
     setActionLoading(true);
     try {
-      await studentService.delete(studentToDelete.studentId, true);
+      const res = await studentService.delete(studentToDelete.studentId, true, {
+        id: studentToDelete.id,
+        nis: studentToDelete.nis,
+        name: studentToDelete.name,
+      });
       await auditService.log(
         'Hapus Siswa',
         'students',
         studentToDelete.studentId,
-        `Menghapus siswa ${studentToDelete.name} secara permanen dari server`
+        `Menghapus siswa ${studentToDelete.name} (${studentToDelete.studentId}) secara permanen dari server beserta data terkait (${res.attendanceCleaned} presensi, ${res.assessmentsCleaned} nilai)`
       );
-      showToast(`Data siswa "${studentToDelete.name}" berhasil dihapus dari server.`, 'success');
-      setStudents((prev) => prev.filter((s) => s.studentId !== studentToDelete.studentId));
+      const detailInfo =
+        res.attendanceCleaned > 0 || res.assessmentsCleaned > 0
+          ? ` (${res.attendanceCleaned} presensi & ${res.assessmentsCleaned} nilai terkait ikut dibersihkan)`
+          : '';
+      showToast(
+        `Data siswa "${studentToDelete.name}" berhasil dihapus permanen dari server database${detailInfo}.`,
+        'success'
+      );
+      setStudents((prev) =>
+        prev.filter(
+          (s) =>
+            s.studentId !== studentToDelete.studentId && s.id !== studentToDelete.id
+        )
+      );
       setIsDeleteOpen(false);
       setStudentToDelete(null);
       await loadData();
@@ -298,6 +350,17 @@ export const StudentsPage: React.FC = () => {
             <span>Export Excel</span>
           </button>
 
+          {sampleStudentsCount > 0 && (
+            <button
+              onClick={() => setIsPurgeSampleModalOpen(true)}
+              className="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Bersihkan data siswa contoh demo"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+              <span>Bersihkan Data Demo ({sampleStudentsCount})</span>
+            </button>
+          )}
+
           <button
             onClick={handleOpenAdd}
             className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-sm transition-all shadow-blue-500/20"
@@ -307,6 +370,37 @@ export const StudentsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Banner Penjelasan Angka Total Siswa & Data Contoh / Demo */}
+      {sampleStudentsCount > 0 && (
+        <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-r from-amber-50 via-amber-50/70 to-orange-50/80 dark:from-amber-950/40 dark:via-amber-950/30 dark:to-orange-950/30 border border-amber-300/80 dark:border-amber-700/60 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0 mt-0.5 border border-amber-400/30">
+              <AlertCircle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-extrabold text-amber-950 dark:text-amber-200">
+                  Penjelasan Total {students.length} Siswa di Sistem
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200">
+                  {sampleStudentsCount} Siswa Contoh Bawaan
+                </span>
+              </div>
+              <p className="text-xs text-amber-900/80 dark:text-amber-300/80 mt-1 leading-relaxed">
+                Angka <strong>{students.length} siswa</strong> di aplikasi terdiri dari <strong>{students.length - sampleStudentsCount} siswa yang Anda daftarkan</strong> ditambah <strong>{sampleStudentsCount} data siswa simulasi/contoh</strong> bawaan awal. Anda dapat menghapus data contoh ini dengan satu klik agar hanya siswa asli Anda yang tampil di semua grafik, rombel, dan absensi.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsPurgeSampleModalOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-bold text-xs shrink-0 flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Hapus {sampleStudentsCount} Siswa Contoh</span>
+          </button>
+        </div>
+      )}
 
       {/* Filter & Sorting Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
@@ -825,6 +919,18 @@ export const StudentsPage: React.FC = () => {
         title="Hapus Siswa dari Server?"
         message={`Apakah Anda yakin ingin menghapus data siswa "${studentToDelete?.name}"? Data siswa ini akan dihilangkan secara permanen dari server database.`}
         confirmLabel="Ya, Hapus Permanen"
+        isDestructive={true}
+        loading={actionLoading}
+      />
+
+      {/* Purge Demo Students Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isPurgeSampleModalOpen}
+        onClose={() => setIsPurgeSampleModalOpen(false)}
+        onConfirm={handlePurgeSampleStudents}
+        title="Bersihkan Semua Siswa Contoh / Demo?"
+        message={`Sistem akan menghapus ${sampleStudentsCount} data siswa contoh bawaan awal dari server database. Hanya siswa riil yang Anda daftarkan sendiri yang akan dipertahankan. Seluruh data grafik presensi, kartu QR, dan rombel akan otomatis menyesuaikan secara akurat.`}
+        confirmLabel={`Ya, Bersihkan (${sampleStudentsCount} Siswa)`}
         isDestructive={true}
         loading={actionLoading}
       />

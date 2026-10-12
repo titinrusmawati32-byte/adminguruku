@@ -59,6 +59,135 @@ export const studentService = {
     }
   },
 
+  async removeSampleStudents(): Promise<{
+    studentsRemoved: number;
+    attendanceCleaned: number;
+    assessmentsCleaned: number;
+    guidanceCleaned: number;
+  }> {
+    try {
+      const snap = await getDocs(collection(db, 'students'));
+      const sampleIds = new Set(INITIAL_SAMPLE_STUDENTS.map((s) => s.studentId));
+      const sampleNis = new Set(INITIAL_SAMPLE_STUDENTS.map((s) => s.nis));
+      const sampleNames = new Set(INITIAL_SAMPLE_STUDENTS.map((s) => s.name.toLowerCase()));
+
+      let studentsRemoved = 0;
+      let attendanceCleaned = 0;
+      let assessmentsCleaned = 0;
+      let guidanceCleaned = 0;
+
+      for (const d of snap.docs) {
+        const id = d.id;
+        const data = d.data();
+        const isSample =
+          sampleIds.has(id) ||
+          sampleIds.has(data.studentId) ||
+          sampleIds.has(data.id) ||
+          id.startsWith('STU-1A-') ||
+          id.startsWith('STU-2A-') ||
+          id.startsWith('STU-6A-') ||
+          (data.studentId &&
+            (data.studentId.startsWith('STU-1A-') ||
+              data.studentId.startsWith('STU-2A-') ||
+              data.studentId.startsWith('STU-6A-'))) ||
+          INITIAL_SAMPLE_STUDENTS.some(
+            (s) =>
+              s.nis === data.nis ||
+              s.name.toLowerCase() === (data.name || data.nama || '').toLowerCase()
+          );
+
+        if (isSample) {
+          sampleIds.add(id);
+          if (data.studentId) sampleIds.add(data.studentId);
+          if (data.nis) sampleNis.add(data.nis);
+          if (data.name) sampleNames.add(data.name.toLowerCase());
+          await deleteDoc(doc(db, 'students', id));
+          studentsRemoved++;
+        }
+      }
+
+      // Purge attendance records for sample students from Firestore server
+      try {
+        const attSnap = await getDocs(collection(db, 'attendance'));
+        for (const ad of attSnap.docs) {
+          const aData = ad.data();
+          const isSampleAtt =
+            sampleIds.has(aData.studentId) ||
+            sampleNis.has(aData.nis) ||
+            sampleNames.has((aData.studentName || '').toLowerCase()) ||
+            (aData.studentId &&
+              (aData.studentId.startsWith('STU-1A-') ||
+                aData.studentId.startsWith('STU-2A-') ||
+                aData.studentId.startsWith('STU-6A-')));
+
+          if (isSampleAtt) {
+            await deleteDoc(doc(db, 'attendance', ad.id));
+            attendanceCleaned++;
+          }
+        }
+      } catch (attErr) {
+        console.warn('Attendance cleanup notice:', attErr);
+      }
+
+      // Clean assessments records for sample students from Firestore server
+      try {
+        const assSnap = await getDocs(collection(db, 'assessments'));
+        for (const asd of assSnap.docs) {
+          const asData = asd.data();
+          if (Array.isArray(asData.scores) && asData.scores.some((s: any) => sampleIds.has(s.studentId))) {
+            const updatedScores = asData.scores.filter((s: any) => !sampleIds.has(s.studentId));
+            await updateDoc(doc(db, 'assessments', asd.id), {
+              scores: updatedScores,
+              updatedAt: serverTimestamp(),
+            });
+            assessmentsCleaned++;
+          }
+        }
+      } catch (assErr) {
+        console.warn('Assessments cleanup notice:', assErr);
+      }
+
+      // Purge guidance records for sample students from Firestore server
+      try {
+        const guiSnap = await getDocs(collection(db, 'guidance'));
+        for (const gd of guiSnap.docs) {
+          const gData = gd.data();
+          const isSampleGui =
+            sampleIds.has(gData.studentId) ||
+            sampleNis.has(gData.nis) ||
+            sampleNames.has((gData.studentName || '').toLowerCase()) ||
+            (gData.studentId &&
+              (gData.studentId.startsWith('STU-1A-') ||
+                gData.studentId.startsWith('STU-2A-') ||
+                gData.studentId.startsWith('STU-6A-')));
+
+          if (isSampleGui) {
+            await deleteDoc(doc(db, 'guidance', gd.id));
+            guidanceCleaned++;
+          }
+        }
+      } catch (guiErr) {
+        console.warn('Guidance cleanup notice:', guiErr);
+      }
+
+      memoryCache.clear();
+      return {
+        studentsRemoved,
+        attendanceCleaned,
+        assessmentsCleaned,
+        guidanceCleaned,
+      };
+    } catch (e) {
+      console.error('Error removing sample students:', e);
+      return {
+        studentsRemoved: 0,
+        attendanceCleaned: 0,
+        assessmentsCleaned: 0,
+        guidanceCleaned: 0,
+      };
+    }
+  },
+
   async getAll(currentUser?: UserProfile | null): Promise<Student[]> {
     const cached = memoryCache.get<Student[]>('students:all');
     let allStudents: Student[] = cached || [];
@@ -67,61 +196,35 @@ export const studentService = {
       try {
         const snap = await getDocs(collection(db, 'students'));
         if (snap.empty) {
-          await studentService.seedSampleStudents();
-          const freshSnap = await getDocs(collection(db, 'students'));
-          if (freshSnap.empty) {
-            allStudents = [];
-            memoryCache.set('students:all', []);
-            return [];
-          }
-          allStudents = freshSnap.docs.map((d) => {
-            const data = d.data();
-            const sName = data.name || data.nama || '';
-            const sClassId = data.classId || data.kelas || '';
-            const sClassName = data.className || data.kelas || sClassId;
-            return {
-              studentId: d.id,
-              id: d.id,
-              nis: data.nis || '',
-              nisn: data.nisn || '',
-              name: sName,
-              nama: sName,
-              gender: data.gender || 'L',
-              classId: sClassId,
-              className: sClassName,
-              kelas: sClassName,
-              status: data.status || 'active',
-              qrCode: data.qrCode || data.nis || `STU-${d.id}`,
-              fotoUrl: data.fotoUrl || '',
-              createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
-              updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt,
-            };
-          });
-        } else {
-          allStudents = snap.docs.map((d) => {
-            const data = d.data();
-            const sName = data.name || data.nama || '';
-            const sClassId = data.classId || data.kelas || '';
-            const sClassName = data.className || data.kelas || sClassId;
-            return {
-              studentId: d.id,
-              id: d.id,
-              nis: data.nis || '',
-              nisn: data.nisn || '',
-              name: sName,
-              nama: sName,
-              gender: data.gender || 'L',
-              classId: sClassId,
-              className: sClassName,
-              kelas: sClassName,
-              status: data.status || 'active',
-              qrCode: data.qrCode || data.nis || `STU-${d.id}`,
-              fotoUrl: data.fotoUrl || '',
-              createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
-              updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt,
-            };
-          });
+          allStudents = [];
+          memoryCache.set('students:all', []);
+          return [];
         }
+
+        allStudents = snap.docs.map((d) => {
+          const data = d.data();
+          const sName = data.name || data.nama || '';
+          const sClassId = data.classId || data.kelas || '';
+          const sClassName = data.className || data.kelas || sClassId;
+          return {
+            studentId: d.id,
+            id: d.id,
+            nis: data.nis || '',
+            nisn: data.nisn || '',
+            name: sName,
+            nama: sName,
+            gender: data.gender || 'L',
+            classId: sClassId,
+            className: sClassName,
+            kelas: sClassName,
+            status: data.status || 'active',
+            qrCode: data.qrCode || data.nis || `STU-${d.id}`,
+            fotoUrl: data.fotoUrl || '',
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+            updatedAt: data.updatedAt?.toDate ? data.updatedAt.toDate().toISOString() : data.updatedAt,
+          };
+        });
+
         allStudents.sort((a, b) => a.name.localeCompare(b.name));
         memoryCache.set('students:all', allStudents);
       } catch (err) {
@@ -362,20 +465,235 @@ export const studentService = {
     }
   },
 
-  async delete(studentId: string, hardDelete = true): Promise<void> {
+  async delete(
+    studentId: string,
+    hardDelete = true,
+    extraIdentifiers?: { id?: string; nis?: string; name?: string }
+  ): Promise<{
+    studentDeleted: boolean;
+    attendanceCleaned: number;
+    assessmentsCleaned: number;
+    guidanceCleaned: number;
+  }> {
+    let attendanceCleaned = 0;
+    let assessmentsCleaned = 0;
+    let guidanceCleaned = 0;
+
     try {
       if (hardDelete) {
-        await deleteDoc(doc(db, 'students', studentId));
+        // 1. Direct delete by ID
+        await deleteDoc(doc(db, 'students', studentId)).catch(() => {});
+
+        // 2. Direct delete by alternate ID if different
+        if (extraIdentifiers?.id && extraIdentifiers.id !== studentId) {
+          await deleteDoc(doc(db, 'students', extraIdentifiers.id)).catch(() => {});
+        }
+
+        // 3. Purge all documents in 'students' collection matching studentId, id, or nis
+        const targetIds = new Set([studentId, extraIdentifiers?.id].filter(Boolean) as string[]);
+        const studentSnap = await getDocs(collection(db, 'students'));
+        for (const d of studentSnap.docs) {
+          const sData = d.data();
+          const matches =
+            targetIds.has(d.id) ||
+            targetIds.has(sData.studentId) ||
+            targetIds.has(sData.id) ||
+            (extraIdentifiers?.nis && sData.nis && sData.nis === extraIdentifiers.nis);
+          if (matches) {
+            await deleteDoc(doc(db, 'students', d.id)).catch(() => {});
+          }
+        }
+
+        // 4. Cascade delete all attendance records for this student from Firestore server
+        try {
+          const attSnap = await getDocs(collection(db, 'attendance'));
+          for (const ad of attSnap.docs) {
+            const aData = ad.data();
+            const matches =
+              targetIds.has(aData.studentId) ||
+              (extraIdentifiers?.nis && aData.nis && aData.nis === extraIdentifiers.nis) ||
+              (extraIdentifiers?.name &&
+                aData.studentName &&
+                aData.studentName.toLowerCase() === extraIdentifiers.name.toLowerCase());
+            if (matches) {
+              await deleteDoc(doc(db, 'attendance', ad.id)).catch(() => {});
+              attendanceCleaned++;
+            }
+          }
+        } catch (attErr) {
+          console.warn('Attendance cascade cleanup notice:', attErr);
+        }
+
+        // 5. Cascade delete all guidance records for this student from Firestore server
+        try {
+          const guiSnap = await getDocs(collection(db, 'guidance'));
+          for (const gd of guiSnap.docs) {
+            const gData = gd.data();
+            const matches =
+              targetIds.has(gData.studentId) ||
+              (extraIdentifiers?.nis && gData.nis && gData.nis === extraIdentifiers.nis) ||
+              (extraIdentifiers?.name &&
+                gData.studentName &&
+                gData.studentName.toLowerCase() === extraIdentifiers.name.toLowerCase());
+            if (matches) {
+              await deleteDoc(doc(db, 'guidance', gd.id)).catch(() => {});
+              guidanceCleaned++;
+            }
+          }
+        } catch (guiErr) {
+          console.warn('Guidance cascade cleanup notice:', guiErr);
+        }
+
+        // 6. Cascade clean student scores inside assessments from Firestore server
+        try {
+          const assSnap = await getDocs(collection(db, 'assessments'));
+          for (const asd of assSnap.docs) {
+            const asData = asd.data();
+            if (
+              Array.isArray(asData.scores) &&
+              asData.scores.some((s: any) => targetIds.has(s.studentId))
+            ) {
+              const updatedScores = asData.scores.filter(
+                (s: any) => !targetIds.has(s.studentId)
+              );
+              await updateDoc(doc(db, 'assessments', asd.id), {
+                scores: updatedScores,
+                updatedAt: serverTimestamp(),
+              }).catch(() => {});
+              assessmentsCleaned++;
+            }
+          }
+        } catch (assErr) {
+          console.warn('Assessments cascade cleanup notice:', assErr);
+        }
       } else {
         await updateDoc(doc(db, 'students', studentId), {
           status: 'inactive',
           updatedAt: serverTimestamp(),
         });
       }
-      memoryCache.invalidate('students');
-      memoryCache.invalidate('students:all');
+
+      memoryCache.clear();
+
+      return {
+        studentDeleted: true,
+        attendanceCleaned,
+        assessmentsCleaned,
+        guidanceCleaned,
+      };
     } catch (err) {
       handleFirestoreError(err, OperationType.DELETE, `students/${studentId}`);
+      return {
+        studentDeleted: false,
+        attendanceCleaned,
+        assessmentsCleaned,
+        guidanceCleaned,
+      };
+    }
+  },
+
+  async purgeOrphanedRecords(): Promise<{
+    attendancePurged: number;
+    guidancePurged: number;
+    assessmentsPurged: number;
+    studentsPurged: number;
+  }> {
+    try {
+      // 1. Get all current real student IDs and NIS
+      const studentSnap = await getDocs(collection(db, 'students'));
+      const validStudentIds = new Set<string>();
+      const validNis = new Set<string>();
+      const validNames = new Set<string>();
+
+      for (const d of studentSnap.docs) {
+        const data = d.data();
+        validStudentIds.add(d.id);
+        if (data.studentId) validStudentIds.add(data.studentId);
+        if (data.id) validStudentIds.add(data.id);
+        if (data.nis) validNis.add(data.nis);
+        if (data.name) validNames.add(data.name.toLowerCase());
+        if (data.nama) validNames.add(data.nama.toLowerCase());
+      }
+
+      let attendancePurged = 0;
+      let guidancePurged = 0;
+      let assessmentsPurged = 0;
+      let studentsPurged = 0;
+
+      // 2. Scan and purge orphaned attendance records from Firestore
+      const attSnap = await getDocs(collection(db, 'attendance'));
+      for (const ad of attSnap.docs) {
+        const aData = ad.data();
+        const hasValidStudent =
+          (aData.studentId && validStudentIds.has(aData.studentId)) ||
+          (aData.nis && validNis.has(aData.nis)) ||
+          (aData.studentName && validNames.has(aData.studentName.toLowerCase()));
+
+        // Also check if it's a sample/demo record prefix
+        const isDemo =
+          aData.studentId &&
+          (aData.studentId.startsWith('STU-1A-') ||
+            aData.studentId.startsWith('STU-2A-') ||
+            aData.studentId.startsWith('STU-6A-'));
+
+        if (!hasValidStudent || isDemo) {
+          await deleteDoc(doc(db, 'attendance', ad.id));
+          attendancePurged++;
+        }
+      }
+
+      // 3. Scan and purge orphaned guidance records from Firestore
+      const guiSnap = await getDocs(collection(db, 'guidance'));
+      for (const gd of guiSnap.docs) {
+        const gData = gd.data();
+        const hasValidStudent =
+          (gData.studentId && validStudentIds.has(gData.studentId)) ||
+          (gData.nis && validNis.has(gData.nis)) ||
+          (gData.studentName && validNames.has(gData.studentName.toLowerCase()));
+
+        if (!hasValidStudent) {
+          await deleteDoc(doc(db, 'guidance', gd.id));
+          guidancePurged++;
+        }
+      }
+
+      // 4. Scan and clean assessments records from Firestore
+      const assSnap = await getDocs(collection(db, 'assessments'));
+      for (const asd of assSnap.docs) {
+        const asData = asd.data();
+        if (Array.isArray(asData.scores)) {
+          const originalLen = asData.scores.length;
+          const cleaned = asData.scores.filter(
+            (s: any) =>
+              validStudentIds.has(s.studentId) ||
+              (s.studentName && validNames.has(s.studentName.toLowerCase()))
+          );
+          if (cleaned.length !== originalLen) {
+            await updateDoc(doc(db, 'assessments', asd.id), {
+              scores: cleaned,
+              updatedAt: serverTimestamp(),
+            });
+            assessmentsPurged += originalLen - cleaned.length;
+          }
+        }
+      }
+
+      memoryCache.clear();
+
+      return {
+        attendancePurged,
+        guidancePurged,
+        assessmentsPurged,
+        studentsPurged,
+      };
+    } catch (e) {
+      console.error('Error in purgeOrphanedRecords:', e);
+      return {
+        attendancePurged: 0,
+        guidancePurged: 0,
+        assessmentsPurged: 0,
+        studentsPurged: 0,
+      };
     }
   },
 

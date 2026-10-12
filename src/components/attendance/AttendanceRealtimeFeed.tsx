@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Trash2,
   User,
   UserCheck,
   UserX,
@@ -25,6 +26,7 @@ interface AttendanceRealtimeFeedProps {
   syncStatus?: 'connected' | 'saving' | 'error';
   onQuickStatusChange: (studentId: string, status: AttendanceStatus, notes?: string) => Promise<void>;
   onMarkStudentPresent: (student: Student) => Promise<void>;
+  onDeleteRecord?: (record: AttendanceRecord) => Promise<void>;
 }
 
 export const AttendanceRealtimeFeed: React.FC<AttendanceRealtimeFeedProps> = ({
@@ -33,6 +35,7 @@ export const AttendanceRealtimeFeed: React.FC<AttendanceRealtimeFeedProps> = ({
   syncStatus = 'connected',
   onQuickStatusChange,
   onMarkStudentPresent,
+  onDeleteRecord,
 }) => {
   const [activeTab, setActiveTab] = useState<'scanned' | 'unscanned'>('scanned');
   const [searchQuery, setSearchQuery] = useState('');
@@ -332,6 +335,22 @@ export const AttendanceRealtimeFeed: React.FC<AttendanceRealtimeFeedProps> = ({
                       >
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
+
+                      {/* Delete Button */}
+                      {onDeleteRecord && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (window.confirm(`Hapus catatan presensi untuk ${rec.studentName}?`)) {
+                              onDeleteRecord(rec);
+                            }
+                          }}
+                          title="Hapus presensi ini"
+                          className="p-1.5 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
 

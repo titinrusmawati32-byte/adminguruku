@@ -10,6 +10,7 @@ import {
   HeartHandshake,
   Printer,
   Search,
+  Trash2,
   UserCheck,
   Users,
 } from 'lucide-react';
@@ -114,6 +115,17 @@ export const ReportsPage: React.FC = () => {
     loadAll();
   }, [profile?.uid, profile?.role]);
 
+  const handleDeleteAttendanceRecord = async (attendanceId: string, studentName: string) => {
+    if (!window.confirm(`Hapus data presensi untuk ${studentName}?`)) return;
+    try {
+      await attendanceService.delete(attendanceId);
+      setAttendance((prev) => prev.filter((a) => a.attendanceId !== attendanceId));
+      showToast(`Data presensi untuk ${studentName} berhasil dihapus dari server.`, 'success');
+    } catch (err: any) {
+      showToast('Gagal menghapus presensi: ' + err.message, 'error');
+    }
+  };
+
   const submenus = [
     { id: 'students' as ReportSubmenu, label: 'Rekap Siswa', icon: Users },
     { id: 'attendance' as ReportSubmenu, label: 'Rekap Absensi', icon: UserCheck },
@@ -170,7 +182,7 @@ export const ReportsPage: React.FC = () => {
         a.status,
         a.notes || '-',
       ]);
-      return { title: 'Laporan Rekapitulasi Presensi Siswa', headers, rows, count: filtered.length, orientation: 'landscape' as const };
+      return { title: 'Laporan Rekapitulasi Presensi Siswa', headers, rows, count: filtered.length, orientation: 'landscape' as const, rawItems: filtered };
     }
 
     if (activeSubmenu === 'assessments') {
@@ -456,18 +468,38 @@ export const ReportsPage: React.FC = () => {
                       {h}
                     </th>
                   ))}
+                  {activeSubmenu === 'attendance' && (
+                    <th className="py-2.5 px-3 text-center print:hidden w-16">Aksi</th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-700 dark:text-slate-300">
-                {reportTableData.rows.map((row, rIdx) => (
-                  <tr key={rIdx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
-                    {row.map((cell: any, cIdx: number) => (
-                      <td key={cIdx} className="py-2.5 px-3">
-                        {cell}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                {reportTableData.rows.map((row, rIdx) => {
+                  const rawItem = (reportTableData as any).rawItems?.[rIdx];
+                  return (
+                    <tr key={rIdx} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                      {row.map((cell: any, cIdx: number) => (
+                        <td key={cIdx} className="py-2.5 px-3">
+                          {cell}
+                        </td>
+                      ))}
+                      {activeSubmenu === 'attendance' && rawItem && (
+                        <td className="py-2.5 px-3 text-center print:hidden">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteAttendanceRecord(rawItem.attendanceId, rawItem.studentName || 'siswa')
+                            }
+                            title="Hapus data presensi ini"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -9,15 +9,19 @@ import {
   RefreshCw,
   Send,
   Shield,
+  ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   User,
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { useTheme } from '../context/ThemeContext';
 import { backupService } from '../services/backupService';
+import { studentService } from '../services/studentService';
 
 export const SettingsPage: React.FC = () => {
   const { profile, role, isAdmin } = useAuth();
@@ -34,6 +38,46 @@ export const SettingsPage: React.FC = () => {
   const [backupLoading, setBackupLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   const [restoreFile, setRestoreFile] = useState<File | null>(null);
+
+  // Demo Cleanup
+  const [purgeDemoLoading, setPurgeDemoLoading] = useState(false);
+  const [isPurgeDemoOpen, setIsPurgeDemoOpen] = useState(false);
+
+  // Residual / Orphan Cleanup
+  const [purgeOrphanLoading, setPurgeOrphanLoading] = useState(false);
+  const [isPurgeOrphanOpen, setIsPurgeOrphanOpen] = useState(false);
+
+  const handlePurgeDemoStudents = async () => {
+    setPurgeDemoLoading(true);
+    try {
+      const res = await studentService.removeSampleStudents();
+      showToast(
+        `Berhasil membersihkan server: ${res.studentsRemoved} siswa contoh, ${res.attendanceCleaned} presensi demo, dan ${res.assessmentsCleaned} nilai demo telah dihapus tuntas dari database server.`,
+        'success'
+      );
+      setIsPurgeDemoOpen(false);
+    } catch (err: any) {
+      showToast('Gagal membersihkan data demo: ' + err.message, 'error');
+    } finally {
+      setPurgeDemoLoading(false);
+    }
+  };
+
+  const handlePurgeOrphanRecords = async () => {
+    setPurgeOrphanLoading(true);
+    try {
+      const res = await studentService.purgeOrphanedRecords();
+      showToast(
+        `Sinkronisasi server tuntas! Membersihkan ${res.attendancePurged} presensi residual dan ${res.guidancePurged} catatan bimbingan yang tidak bertuan dari server. Database kini 100% sinkron dan bersih!`,
+        'success'
+      );
+      setIsPurgeOrphanOpen(false);
+    } catch (err: any) {
+      showToast('Gagal membersihkan data gantung: ' + err.message, 'error');
+    } finally {
+      setPurgeOrphanLoading(false);
+    }
+  };
 
   // School profile settings
   const [schoolName, setSchoolName] = useState('SD NEGERI HARAPAN BANGSA');
@@ -316,10 +360,88 @@ export const SettingsPage: React.FC = () => {
               </button>
             </form>
           </div>
+
+          {/* Purge Demo Sample Students Card */}
+          <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20 flex flex-col justify-between md:col-span-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+              <div>
+                <div className="flex items-center gap-2 mb-1 font-bold text-xs text-amber-900 dark:text-amber-200">
+                  <Trash2 className="w-4 h-4 text-amber-600" />
+                  <span>Bersihkan Data Siswa Contoh / Demo Sistem</span>
+                </div>
+                <p className="text-xs text-amber-800/80 dark:text-amber-300/80 leading-relaxed">
+                  Menghapus seluruh 12 data siswa contoh (dummy) yang sempat ter-generate otomatis di awal beserta seluruh presensi demonya dari server Firestore, sehingga hanya menyisakan data riil siswa yang Anda daftarkan sendiri.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPurgeDemoOpen(true)}
+                disabled={purgeDemoLoading}
+                className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shrink-0 flex items-center justify-center gap-2 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {purgeDemoLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
+                <span>Bersihkan Data Demo Sekarang</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Zero Residual Server Sync / Orphaned Data Purge Card */}
+          <div className="p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 flex flex-col justify-between md:col-span-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-1">
+              <div>
+                <div className="flex items-center gap-2 mb-1 font-bold text-xs text-emerald-900 dark:text-emerald-200">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Pembersihan Data Residual & Orphaned (Server Firestore)</span>
+                </div>
+                <p className="text-xs text-emerald-800/80 dark:text-emerald-300/80 leading-relaxed">
+                  Memindai seluruh basis data server dan menghapus permanen setiap record presensi, nilai, atau bimbingan yang masih tersisa / menyangkut di server untuk siswa yang telah dihapus. Menjamin server database 100% steril dan sinkron.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPurgeOrphanOpen(true)}
+                disabled={purgeOrphanLoading}
+                className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0 flex items-center justify-center gap-2 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {purgeOrphanLoading ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                )}
+                <span>Pindai & Bersihkan Data Gantung</span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Confirm Purge Demo Dialog */}
+      <ConfirmDialog
+        isOpen={isPurgeDemoOpen}
+        onClose={() => setIsPurgeDemoOpen(false)}
+        onConfirm={handlePurgeDemoStudents}
+        title="Bersihkan Data Siswa Contoh?"
+        message="Tindakan ini akan menghapus semua data siswa contoh (sample) awal beserta riwayat presensi demo terkait dari server database. Siswa asli yang Anda daftarkan sendiri akan tetap aman dan tidak akan terhapus."
+        confirmLabel="Ya, Bersihkan Data Contoh"
+        isDestructive={true}
+        loading={purgeDemoLoading}
+      />
 
+      {/* Confirm Purge Orphan Dialog */}
+      <ConfirmDialog
+        isOpen={isPurgeOrphanOpen}
+        onClose={() => setIsPurgeOrphanOpen(false)}
+        onConfirm={handlePurgeOrphanRecords}
+        title="Bersihkan Data Residual / Gantung di Server?"
+        message="Sistem akan memeriksa seluruh koleksi presensi, bimbingan, dan nilai di server Firestore. Rekaman apa pun yang mengacu pada data siswa yang sudah dihapus akan langsung dimusnahkan secara permanen dari server database."
+        confirmLabel="Ya, Bersihkan Server Sekarang"
+        isDestructive={false}
+        loading={purgeOrphanLoading}
+      />
     </div>
   );
 };

@@ -20,6 +20,7 @@ import {
   Shield,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserCog,
   Users,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useEffect, useMemo, useState } from 'react';
+import { ConfirmDialog } from '../components/common/ConfirmDialog';
 import { EmptyState } from '../components/common/EmptyState';
 import { Modal } from '../components/common/Modal';
 import { ActiveTab } from '../components/layout/Sidebar';
@@ -72,6 +74,47 @@ export const RombelPage: React.FC<RombelPageProps> = ({ onSelectTab }) => {
 
   // Student QR Modal
   const [qrModalStudent, setQrModalStudent] = useState<Student | null>(null);
+
+  // Student Delete (Admin)
+  const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
+  const [isDeleteStudentOpen, setIsDeleteStudentOpen] = useState(false);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
+
+  const handleDeleteStudentConfirm = async () => {
+    if (!studentToDelete) return;
+    setIsDeletingStudent(true);
+    try {
+      const res = await studentService.delete(studentToDelete.studentId, true, {
+        id: studentToDelete.id,
+        nis: studentToDelete.nis,
+        name: studentToDelete.name,
+      });
+      await auditService.log(
+        'Hapus Siswa Rombel',
+        'students',
+        studentToDelete.studentId,
+        `Admin menghapus siswa ${studentToDelete.name} (${studentToDelete.studentId}) dari server secara permanen`
+      );
+      const detailInfo =
+        res.attendanceCleaned > 0
+          ? ` (${res.attendanceCleaned} riwayat presensi terkait ikut dibersihkan)`
+          : '';
+      showToast(
+        `Data siswa "${studentToDelete.name}" berhasil dihapus permanen dari server database${detailInfo}.`,
+        'success'
+      );
+      setStudents((prev) =>
+        prev.filter((s) => s.studentId !== studentToDelete.studentId && s.id !== studentToDelete.id)
+      );
+      setIsDeleteStudentOpen(false);
+      setStudentToDelete(null);
+      await loadData();
+    } catch (err: any) {
+      showToast('Gagal menghapus siswa: ' + err.message, 'error');
+    } finally {
+      setIsDeletingStudent(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -823,13 +866,25 @@ export const RombelPage: React.FC<RombelPageProps> = ({ onSelectTab }) => {
                             </span>
                           </td>
                           <td className="py-3 text-center">
-                            <button
-                              onClick={() => setQrModalStudent(stu)}
-                              className="p-1 rounded-lg text-[#66758A] hover:text-[#D9A62E] transition-colors cursor-pointer"
-                              title="Lihat Barcode QR"
-                            >
-                              <QrCode className="w-4 h-4 mx-auto" />
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => setQrModalStudent(stu)}
+                                className="p-1.5 rounded-lg text-[#66758A] hover:text-[#D9A62E] hover:bg-amber-50 dark:hover:bg-amber-950/40 transition-colors cursor-pointer"
+                                title="Lihat Barcode QR"
+                              >
+                                <QrCode className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setStudentToDelete(stu);
+                                  setIsDeleteStudentOpen(true);
+                                }}
+                                className="p-1.5 rounded-lg text-[#66758A] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                                title="Hapus Siswa Permanen dari Server"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1016,6 +1071,21 @@ export const RombelPage: React.FC<RombelPageProps> = ({ onSelectTab }) => {
           </div>
         )}
       </Modal>
+
+      {/* Delete Student Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isDeleteStudentOpen}
+        onClose={() => {
+          setIsDeleteStudentOpen(false);
+          setStudentToDelete(null);
+        }}
+        onConfirm={handleDeleteStudentConfirm}
+        title="Hapus Siswa dari Database Server?"
+        message={`Apakah Anda yakin ingin menghapus data siswa "${studentToDelete?.name}" (${studentToDelete?.nis || studentToDelete?.studentId})? Data siswa beserta seluruh riwayat presensi & nilainya akan dimusnahkan secara permanen dari server database Firestore.`}
+        confirmLabel="Ya, Hapus Permanen dari Server"
+        isDestructive={true}
+        loading={isDeletingStudent}
+      />
     </div>
   );
 };

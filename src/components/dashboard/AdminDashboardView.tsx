@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Users,
   Calendar,
@@ -117,16 +117,47 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
   }, []);
 
   const todayStr = new Date().toISOString().slice(0, 10);
-  const todayAttendance = attendance.filter((a) => a.date === todayStr);
-  const hadirCount = todayAttendance.filter((a) => a.status === 'Hadir').length;
-  const sakitCount = todayAttendance.filter((a) => a.status === 'Sakit').length;
-  const izinCount = todayAttendance.filter((a) => a.status === 'Izin').length;
-  const alpaCount = todayAttendance.filter((a) => a.status === 'Alpa').length;
+
+  // Synchronize attendance strictly with existing students in the database
+  const todayAttendance = useMemo(() => {
+    if (students.length === 0) return [];
+    const validIds = new Set<string>();
+    const validNis = new Set<string>();
+    const validNames = new Set<string>();
+    students.forEach((s) => {
+      if (s.studentId) validIds.add(s.studentId);
+      if (s.id) validIds.add(s.id);
+      if (s.nis) validNis.add(s.nis);
+      if (s.name) validNames.add(s.name.toLowerCase());
+      if (s.nama) validNames.add(s.nama.toLowerCase());
+    });
+
+    return attendance.filter((a: AttendanceRecord) => {
+      if (a.date !== todayStr) return false;
+      return (
+        (a.studentId && validIds.has(a.studentId)) ||
+        (a.nis && validNis.has(a.nis)) ||
+        (a.studentName && validNames.has(a.studentName.toLowerCase()))
+      );
+    });
+  }, [attendance, todayStr, students]);
+
+  const hadirCount = todayAttendance.filter((a: AttendanceRecord) => a.status === 'Hadir').length;
+  const sakitCount = todayAttendance.filter((a: AttendanceRecord) => a.status === 'Sakit').length;
+  const izinCount = todayAttendance.filter((a: AttendanceRecord) => a.status === 'Izin').length;
+  const alpaCount = todayAttendance.filter((a: AttendanceRecord) => a.status === 'Alpa').length;
 
   const totalSiswa = students.length;
   const persentaseKehadiran = todayAttendance.length > 0 
     ? Math.round((hadirCount / todayAttendance.length) * 100)
-    : 100;
+    : 0;
+
+  const attendancePieData = [
+    { name: 'Hadir', value: hadirCount, color: '#10B981' },
+    { name: 'Sakit', value: sakitCount, color: '#3B82F6' },
+    { name: 'Izin', value: izinCount, color: '#F59E0B' },
+    { name: 'Alpa', value: alpaCount, color: '#EF4444' },
+  ].filter((item) => item.value > 0);
 
   // Audit of teacher activity completion
   const agendaDates = new Set(agendas.map((a) => a.date));
@@ -239,10 +270,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
           </div>
           <div className="mt-4">
             <div className="text-2xl font-extrabold text-[#172A45] dark:text-[#F5F7FC]">
-              {persentaseKehadiran}%
+              {todayAttendance.length > 0 ? `${persentaseKehadiran}%` : '0%'}
             </div>
             <p className="text-[11px] text-[#66758A] dark:text-[#B4C1D4] mt-1">
-              {hadirCount} Hadir · {sakitCount + izinCount + alpaCount} Tidak Hadir
+              {todayAttendance.length > 0
+                ? `${hadirCount} Hadir · ${sakitCount + izinCount + alpaCount} Tidak Hadir`
+                : 'Belum ada presensi hari ini'}
             </p>
           </div>
           <button
@@ -430,35 +463,76 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
           <div>
             <h3 className="text-base font-bold text-[#102A50] dark:text-[#F5F7FC] flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-500" />
-              Rekap Presensi Siswa
+              Rekap Presensi Siswa Hari Ini
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Distribusi status kehadiran terkini
+              {todayAttendance.length > 0
+                ? `${todayAttendance.length} siswa tercatat kehadiran hari ini`
+                : 'Belum ada presensi siswa yang dicatat hari ini'}
             </p>
 
-            <div className="mt-4 space-y-2.5">
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-xs">
+            {todayAttendance.length === 0 ? (
+              <div className="my-5 p-5 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex flex-col items-center justify-center text-center">
+                <UserCheck className="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                <p className="text-xs font-bold text-slate-700 dark:text-slate-300">Belum Ada Presensi Hari Ini</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Grafik status kehadiran akan menyesuaikan otomatis begitu data dicatat.
+                </p>
+              </div>
+            ) : (
+              <div className="h-44 w-full my-3">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={attendancePieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={42}
+                      outerRadius={65}
+                      paddingAngle={4}
+                      dataKey="value"
+                    >
+                      {attendancePieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#071225',
+                        borderColor: '#263B58',
+                        borderRadius: '12px',
+                        color: '#F5F7FC',
+                        fontSize: '12px',
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center justify-between p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-xs">
                 <span className="font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                   Hadir
                 </span>
                 <span className="font-bold text-emerald-700 dark:text-emerald-300">{hadirCount} Siswa</span>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-xs">
+              <div className="flex items-center justify-between p-2 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-xs">
                 <span className="font-semibold text-blue-800 dark:text-blue-300 flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-blue-500" />
                   Sakit
                 </span>
                 <span className="font-bold text-blue-700 dark:text-blue-300">{sakitCount} Siswa</span>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-xs">
+              <div className="flex items-center justify-between p-2 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-xs">
                 <span className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                   Izin
                 </span>
                 <span className="font-bold text-amber-700 dark:text-amber-300">{izinCount} Siswa</span>
               </div>
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-xs">
+              <div className="flex items-center justify-between p-2 rounded-xl bg-rose-50 dark:bg-rose-950/30 text-xs">
                 <span className="font-semibold text-rose-800 dark:text-rose-300 flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
                   Alpa / Tanpa Keterangan
