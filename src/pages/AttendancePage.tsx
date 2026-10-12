@@ -62,15 +62,8 @@ export const AttendancePage: React.FC = () => {
   }, [availableClasses]);
   const [saving, setSaving] = useState(false);
 
-  // View Mode: For Admin, always table/monitoring. For Guru, 'scanner' as primary or 'table'
-  const [viewMode, setViewMode] = useState<'scanner' | 'table'>(role === 'admin' ? 'table' : 'scanner');
-
-  // If role is admin, force viewMode to table
-  useEffect(() => {
-    if (role === 'admin') {
-      setViewMode('table');
-    }
-  }, [role]);
+  // View Mode: 'scanner' (Pemindai QR Kartu Siswa), 'table' (Input Manual & Tabel Rombel)
+  const [viewMode, setViewMode] = useState<'scanner' | 'table'>('scanner');
 
   // Session Selections
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -81,7 +74,7 @@ export const AttendancePage: React.FC = () => {
 
   // In-memory Table Attendance State: studentId -> { status, notes, method }
   const [attendanceMap, setAttendanceMap] = useState<
-    Record<string, { status: AttendanceStatus; notes: string; method: 'manual' | 'qr' }>
+    Record<string, { status: AttendanceStatus; notes: string; method: string }>
   >({});
 
   // Search filter for table view
@@ -203,15 +196,20 @@ export const AttendancePage: React.FC = () => {
   }, [schedules, selectedScheduleId]);
 
   // Handle Scan QR Success Callback
-  const handleRecordSuccess = async (student: Student, scanTime: string): Promise<{ isDuplicate?: boolean; status?: string } | void> => {
-    const docId = `${selectedDate}_${selectedClassId}_${student.studentId}_${currentSchedule?.subjectId || 'general'}`;
+  const handleRecordSuccess = async (
+    student: Student,
+    scanTime: string
+  ): Promise<{ isDuplicate?: boolean; status?: string } | void> => {
+    const targetClassId = student.classId || selectedClassId;
+    const targetClassName = student.className || currentClass?.name || targetClassId;
+    const docId = `${selectedDate}_${targetClassId}_${student.studentId}_${currentSchedule?.subjectId || 'general'}`;
 
     const res = await attendanceService.recordScan({
-      scheduleId: selectedScheduleId || undefined,
-      classId: selectedClassId,
-      className: currentClass?.name || selectedClassId,
-      subjectId: currentSchedule?.subjectId,
-      subjectName: currentSchedule?.subjectName,
+      scheduleId: selectedScheduleId || '',
+      classId: targetClassId,
+      className: targetClassName,
+      subjectId: currentSchedule?.subjectId || '',
+      subjectName: currentSchedule?.subjectName || '',
       teacherId: profile?.teacherId || profile?.uid || 'GURU-001',
       date: selectedDate,
       studentId: student.studentId,
@@ -230,10 +228,10 @@ export const AttendancePage: React.FC = () => {
       'Scan Presensi QR',
       'attendance',
       docId,
-      `Presensi QR berhasil untuk ${student.name} (${student.nis}) di kelas ${currentClass?.name}`
+      `Presensi QR berhasil untuk ${student.name} (${student.nis}) di kelas ${targetClassName}`
     );
 
-    showToast(`Presensi berhasil: ${student.name} (Hadir)`, 'success');
+    showToast(`Presensi berhasil: ${student.name} (${targetClassName} - Hadir)`, 'success');
     return { isDuplicate: false, status: 'Hadir' };
   };
 
@@ -246,11 +244,11 @@ export const AttendancePage: React.FC = () => {
       await attendanceService.saveBatch([
         {
           attendanceId: docId,
-          scheduleId: selectedScheduleId || undefined,
+          scheduleId: selectedScheduleId || '',
           classId: selectedClassId,
           className: currentClass?.name || selectedClassId,
-          subjectId: currentSchedule?.subjectId,
-          subjectName: currentSchedule?.subjectName,
+          subjectId: currentSchedule?.subjectId || '',
+          subjectName: currentSchedule?.subjectName || '',
           teacherId: profile?.teacherId || profile?.uid || 'GURU-001',
           date: selectedDate,
           studentId,
@@ -328,11 +326,11 @@ export const AttendancePage: React.FC = () => {
           const item = attendanceMap[s.studentId] || { status: 'Hadir', notes: '', method: 'manual' };
           return {
             attendanceId: `${selectedDate}_${selectedClassId}_${s.studentId}_${currentSchedule?.subjectId || 'general'}`,
-            scheduleId: selectedScheduleId || undefined,
+            scheduleId: selectedScheduleId || '',
             classId: selectedClassId,
             className: currentClass?.name || selectedClassId,
-            subjectId: currentSchedule?.subjectId,
-            subjectName: currentSchedule?.subjectName,
+            subjectId: currentSchedule?.subjectId || '',
+            subjectName: currentSchedule?.subjectName || '',
             teacherId: profile?.teacherId || profile?.uid || 'GURU-001',
             date: selectedDate,
             studentId: s.studentId,
@@ -480,43 +478,36 @@ export const AttendancePage: React.FC = () => {
           </div>
         </div>
 
-        {/* View Mode Switcher Toggle - Only for Guru */}
-        {role === 'guru' && (
-          <div className="flex items-center gap-2 pt-2 lg:pt-0">
-            <div className="p-1 rounded-2xl bg-[#ECE9E1]/70 dark:bg-[#071225] border border-[#E0E5EC] dark:border-[#263B58] flex items-center gap-1 shadow-inner">
-              <button
-                type="button"
-                onClick={() => setViewMode('scanner')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-                  viewMode === 'scanner'
-                    ? 'bg-[#102A50] dark:bg-[#172D4B] text-white shadow-md border border-[#D9A62E]/40 font-bold'
-                    : 'text-[#66758A] dark:text-[#B4C1D4] hover:text-[#102A50] dark:hover:text-[#F5F7FC]'
-                }`}
-              >
-                <Camera className={`w-4 h-4 ${viewMode === 'scanner' ? 'text-[#D9A62E] dark:text-[#FFD675]' : ''}`} />
-                <span>Pemindai QR</span>
-              </button>
+        {/* View Mode Switcher Toggle: Focused on QR Scanner and Manual Table */}
+        <div className="flex items-center gap-2 pt-2 lg:pt-0">
+          <div className="p-1.5 rounded-2xl bg-[#ECE9E1]/70 dark:bg-[#071225] border border-[#E0E5EC] dark:border-[#263B58] flex items-center gap-1.5 shadow-inner">
+            <button
+              type="button"
+              onClick={() => setViewMode('scanner')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                viewMode === 'scanner'
+                  ? 'bg-[#102A50] dark:bg-[#172D4B] text-white shadow-md border border-[#D9A62E]/40 font-bold'
+                  : 'text-[#66758A] dark:text-[#B4C1D4] hover:text-[#102A50] dark:hover:text-[#F5F7FC]'
+              }`}
+            >
+              <QrCode className={`w-4 h-4 ${viewMode === 'scanner' ? 'text-[#D9A62E] dark:text-[#FFD675]' : ''}`} />
+              <span>Pemindai QR Kartu Siswa</span>
+            </button>
 
-              <button
-                type="button"
-                onClick={() => setViewMode('table')}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
-                  viewMode === 'table'
-                    ? 'bg-[#102A50] dark:bg-[#172D4B] text-white shadow-md border border-[#D9A62E]/40 font-bold'
-                    : 'text-[#66758A] dark:text-[#B4C1D4] hover:text-[#102A50] dark:hover:text-[#F5F7FC]'
-                }`}
-              >
-                <Table className={`w-4 h-4 ${viewMode === 'table' ? 'text-[#D9A62E] dark:text-[#FFD675]' : ''}`} />
-                <span>Tabel Rombel</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-[#102A50] dark:bg-[#172D4B] text-white shadow-md border border-[#D9A62E]/40 font-bold'
+                  : 'text-[#66758A] dark:text-[#B4C1D4] hover:text-[#102A50] dark:hover:text-[#F5F7FC]'
+              }`}
+            >
+              <Table className={`w-4 h-4 ${viewMode === 'table' ? 'text-[#D9A62E] dark:text-[#FFD675]' : ''}`} />
+              <span>Input Manual & Tabel Rombel</span>
+            </button>
           </div>
-        )}
-        {role === 'admin' && (
-          <div className="px-3 py-1.5 rounded-xl bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 text-purple-700 dark:text-purple-300 text-xs font-semibold flex items-center gap-2">
-            <span>🛡️ Mode Monitoring (Read-Only)</span>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Real-time Summary Pills */}
@@ -565,6 +556,7 @@ export const AttendancePage: React.FC = () => {
           <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 opacity-60" />
         </div>
       </div>
+
 
       {/* VIEW MODE 1: SCANNER KAMERA QR (PRIMARY FOCUS) */}
       {viewMode === 'scanner' && (

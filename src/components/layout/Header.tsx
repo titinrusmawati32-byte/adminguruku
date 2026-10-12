@@ -1,5 +1,6 @@
 import {
   Bell,
+  Camera,
   Check,
   CheckCircle,
   Menu,
@@ -10,6 +11,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import React, { useState } from 'react';
+import { triggerCameraPermissionModal } from '../common/CameraPermissionModal';
 import { useAuth } from '../../context/AuthContext';
 import { useNotification } from '../../context/NotificationContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -98,6 +100,17 @@ export const Header: React.FC<HeaderProps> = ({
             <span>Presensi Cepat</span>
           </button>
         )}
+
+        {/* Camera Permission Quick Trigger */}
+        <button
+          type="button"
+          onClick={() => triggerCameraPermissionModal()}
+          className="p-2 rounded-xl text-[#66758A] hover:text-[#102A50] dark:text-[#B4C1D4] dark:hover:text-[#FFD675] hover:bg-[#ECE9E1]/60 dark:hover:bg-[#10223D] transition-colors cursor-pointer"
+          title="Pengaturan & Persetujuan Akses Kamera"
+          aria-label="Izin Kamera"
+        >
+          <Camera className="w-5 h-5" />
+        </button>
 
         {/* Global Day/Night Theme Toggle in Header */}
         <button

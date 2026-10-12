@@ -85,9 +85,15 @@
   body {
     background: white !important;
     color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
-  .print\:hidden {
+  aside, header, nav, .print\:hidden {
     display: none !important;
+  }
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
   }
 }
 

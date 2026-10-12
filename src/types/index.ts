@@ -21,16 +21,58 @@ export interface UserProfile {
 
 export interface Student {
   studentId: string;
+  id?: string;
   nis: string;
   nisn: string;
   name: string;
+  nama?: string;
   gender: 'L' | 'P';
   classId: string;
   className?: string;
+  kelas?: string;
   status: 'active' | 'inactive';
   qrCode?: string;
+  fotoUrl?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type Siswa = Student & {
+  id: string;
+  nama: string;
+  kelas: string;
+  nisn: string;
+  fotoUrl?: string;
+};
+
+export type Mapel = Subject & {
+  id?: string;
+  nama?: string;
+};
+
+export interface LogAbsensi {
+  id: string;
+  waktu: string;
+  tanggal: string;
+  kelas: string;
+  mapel: string;
+  idSiswa: string;
+  namaSiswa: string;
+  status: 'Hadir' | 'Izin' | 'Sakit' | 'Alpa';
+  bulan: string;
+  tahun: string;
+  namaGuru?: string;
+  metodeAbsensi?: string;
+  confidence?: number;
+}
+
+export interface Pengaturan {
+  Nama_Guru?: string;
+  Nama_Sekolah?: string;
+  NIP_Guru?: string;
+  Tahun_Pelajaran?: string;
+  Semester?: string;
+  [key: string]: any;
 }
 
 export interface SchoolClass {
@@ -89,7 +131,8 @@ export interface AttendanceRecord {
   nis?: string;
   status: AttendanceStatus;
   notes?: string;
-  method: 'manual' | 'qr';
+  method: 'manual' | 'qr' | 'face' | 'face_multi' | string;
+  confidence?: number;
   createdAt?: string;
   updatedAt?: string;
 }

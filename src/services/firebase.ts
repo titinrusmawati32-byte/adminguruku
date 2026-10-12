@@ -95,3 +95,28 @@ export function getFriendlyErrorMessage(error: unknown): string {
   }
   return str;
 }
+
+/**
+ * Strips all undefined fields recursively to prevent Firestore 'Unsupported field value: undefined' errors
+ */
+export function sanitizeFirestoreData<T extends Record<string, any>>(data: T): Partial<T> {
+  if (!data || typeof data !== 'object') return data;
+  const result: any = Array.isArray(data) ? [] : {};
+  for (const key of Object.keys(data)) {
+    const val = data[key];
+    if (val !== undefined) {
+      if (
+        val !== null &&
+        typeof val === 'object' &&
+        !Array.isArray(val) &&
+        !(val instanceof Date) &&
+        typeof (val as any).toMillis !== 'function'
+      ) {
+        result[key] = sanitizeFirestoreData(val);
+      } else {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}

@@ -6,11 +6,13 @@ import {
   Download,
   Filter,
   GraduationCap,
+  Loader2,
   Printer,
   QrCode,
   Square,
   Users,
 } from 'lucide-react';
+import QRCode from 'qrcode';
 import { QRCodeSVG } from 'qrcode.react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../components/common/EmptyState';
@@ -70,9 +72,20 @@ export const QrCardPrintPage: React.FC = () => {
     fetchData();
   }, [profile?.uid, profile?.role]);
 
+  const resolveClassName = (stu: Student): string => {
+    if (stu.className && !stu.className.startsWith('CLS-')) return stu.className;
+    if (stu.kelas) return stu.kelas;
+    const found = classes.find((c) => c.classId === stu.classId);
+    if (found) return found.name;
+    if (stu.classId && stu.classId.startsWith('CLS-')) {
+      return `Kelas ${stu.classId.replace('CLS-', '')}`;
+    }
+    return stu.className || stu.classId || 'Kelas 6A';
+  };
+
   const filteredStudents = useMemo(() => {
     if (selectedClassId === 'all') return students;
-    return students.filter((s) => s.classId === selectedClassId);
+    return students.filter((s) => s.classId === selectedClassId || s.className === selectedClassId);
   }, [students, selectedClassId]);
 
   const cardsToPrint = useMemo(() => {
@@ -104,29 +117,51 @@ export const QrCardPrintPage: React.FC = () => {
     window.print();
   };
 
-  const handleExportPDF = () => {
+  const [exportingPdf, setExportingPdf] = useState(false);
+
+  const handleExportPDF = async () => {
     if (cardsToPrint.length === 0) {
       showToast('Pilih setidaknya satu kartu siswa untuk diekspor ke PDF.', 'warning');
       return;
     }
 
+    setExportingPdf(true);
     try {
+      // 1. Generate real QR code image Data URLs in parallel
+      const qrDataUrls = await Promise.all(
+        cardsToPrint.map(async (stu) => {
+          const payload = stu.qrCode || stu.studentId || stu.nis;
+          try {
+            return await QRCode.toDataURL(payload, {
+              width: 320,
+              margin: 1,
+              color: {
+                dark: '#0F172A',
+                light: '#FFFFFF',
+              },
+              errorCorrectionLevel: 'M',
+            });
+          } catch (qrErr) {
+            console.error('Failed generating QR code for', stu.name, qrErr);
+            return null;
+          }
+        })
+      );
+
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
         format: 'a4',
       });
 
-      const cardWidth = 85;
-      const cardHeight = 54;
-      const marginX = 15;
-      const marginY = 15;
-      const gapX = 10;
-      const gapY = 10;
+      const cardWidth = 85.6; // Standard CR80 / ID Card width (mm)
+      const cardHeight = 54.0; // Standard CR80 / ID Card height (mm)
+      const marginX = 14.4;
+      const marginY = 16.0;
+      const gapX = 10.0;
+      const gapY = 8.0;
       const cols = 2;
       const rows = 4; // 8 cards per A4 page
-
-      let cardIndex = 0;
 
       cardsToPrint.forEach((stu, i) => {
         if (i > 0 && i % (cols * rows) === 0) {
@@ -140,61 +175,92 @@ export const QrCardPrintPage: React.FC = () => {
         const x = marginX + col * (cardWidth + gapX);
         const y = marginY + row * (cardHeight + gapY);
 
-        // Card Border
-        doc.setDrawColor(203, 213, 225);
+        // 1. Card Base Background & Outer Border
+        doc.setDrawColor(203, 213, 225); // Slate 300
         doc.setFillColor(255, 255, 255);
-        doc.roundedRect(x, y, cardWidth, cardHeight, 3, 3, 'FD');
+        doc.roundedRect(x, y, cardWidth, cardHeight, 3.5, 3.5, 'FD');
 
-        // Card Header Strip
-        doc.setFillColor(37, 99, 235);
-        doc.rect(x, y, cardWidth, 12, 'F');
+        // 2. Card Header Strip (Royal Blue with crisp typography)
+        doc.setFillColor(29, 78, 216); // Blue 700 (#1D4ED8)
+        doc.roundedRect(x, y, cardWidth, 13, 3.5, 3.5, 'F');
+        doc.rect(x, y + 4, cardWidth, 9, 'F'); // Square bottom of header
+
+        // Gold divider accent line
+        doc.setFillColor(217, 166, 46); // Gold #D9A62E
+        doc.rect(x, y + 13, cardWidth, 0.8, 'F');
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8);
         doc.setTextColor(255, 255, 255);
-        doc.text('KARTU PRESENSI DIGITAL SISWA', x + cardWidth / 2, y + 5, { align: 'center' });
+        doc.text('KARTU PRESENSI DIGITAL SISWA', x + cardWidth / 2, y + 5.5, { align: 'center' });
+
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(6.5);
-        doc.text('SD NEGERI HARAPAN BANGSA', x + cardWidth / 2, y + 9.5, { align: 'center' });
+        doc.setTextColor(239, 246, 255);
+        doc.text('SD NEGERI HARAPAN BANGSA', x + cardWidth / 2, y + 10, { align: 'center' });
 
-        // Student Info
+        // 3. Student Information (Left side)
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.setTextColor(15, 23, 42);
-        const nameTrunc = stu.name.length > 22 ? stu.name.slice(0, 20) + '...' : stu.name;
-        doc.text(nameTrunc, x + 6, y + 20);
+        doc.setFontSize(9.5);
+        doc.setTextColor(15, 23, 42); // Slate 900
+        const nameTrunc = stu.name.length > 20 ? stu.name.slice(0, 18) + '...' : stu.name;
+        doc.text(nameTrunc, x + 6, y + 21);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
-        doc.setTextColor(71, 85, 105);
-        doc.text(`NIS   : ${stu.nis}`, x + 6, y + 26);
-        doc.text(`NISN : ${stu.nisn || '-'}`, x + 6, y + 31);
-        doc.text(`Kelas : ${stu.className || stu.classId}`, x + 6, y + 36);
+        doc.setTextColor(51, 65, 85); // Slate 700
+        doc.text(`NIS   : ${stu.nis}`, x + 6, y + 27);
+        doc.text(`NISN : ${stu.nisn || '-'}`, x + 6, y + 32);
+        doc.text(`Kelas : ${resolveClassName(stu)}`, x + 6, y + 37);
 
-        // QR Placeholder text / frame
-        doc.setDrawColor(148, 163, 184);
-        doc.setFillColor(248, 250, 252);
-        doc.roundedRect(x + cardWidth - 30, y + 17, 24, 24, 2, 2, 'FD');
-
+        // Active status badge
+        doc.setFillColor(236, 253, 245); // Emerald 50
+        doc.setDrawColor(167, 243, 208); // Emerald 200
+        doc.roundedRect(x + 6, y + 40.5, 15, 4, 1, 1, 'FD');
         doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7);
-        doc.setTextColor(37, 99, 235);
-        doc.text('QR CODE', x + cardWidth - 18, y + 27, { align: 'center' });
-        doc.setFontSize(6);
-        doc.setTextColor(100, 116, 139);
-        doc.text(stu.nis, x + cardWidth - 18, y + 33, { align: 'center' });
+        doc.setFontSize(5.5);
+        doc.setTextColor(5, 150, 105); // Emerald 600
+        doc.text('AKTIF', x + 13.5, y + 43.3, { align: 'center' });
 
-        // Card Footer
+        // 4. REAL SCANNABLE QR CODE (Right side)
+        const qrDataUrl = qrDataUrls[i];
+        const qrBoxX = x + cardWidth - 30;
+        const qrBoxY = y + 16.5;
+        const qrSize = 24;
+
+        // QR Outer Box
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(203, 213, 225);
+        doc.roundedRect(qrBoxX, qrBoxY, qrSize, qrSize, 2, 2, 'FD');
+
+        if (qrDataUrl) {
+          // Embed real high-resolution QR barcode image
+          doc.addImage(qrDataUrl, 'PNG', qrBoxX + 0.8, qrBoxY + 0.8, qrSize - 1.6, qrSize - 1.6);
+        }
+
+        // Student NIS below QR box
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        doc.setTextColor(71, 85, 105);
+        doc.text(stu.nis || stu.studentId, qrBoxX + qrSize / 2, qrBoxY + qrSize + 4, { align: 'center' });
+
+        // 5. Card Footer Note
+        doc.setDrawColor(241, 245, 249);
+        doc.line(x + 6, y + cardHeight - 6, x + cardWidth - 6, y + cardHeight - 6);
+
         doc.setFont('helvetica', 'italic');
-        doc.setFontSize(6);
+        doc.setFontSize(5.5);
         doc.setTextColor(148, 163, 184);
-        doc.text('Scan barcode untuk presensi otomatis', x + 6, y + cardHeight - 4);
+        doc.text('Scan barcode untuk presensi otomatis', x + 6, y + cardHeight - 2.5);
       });
 
-      doc.save(`KARTU_QR_SISWA_${new Date().toISOString().slice(0, 10)}.pdf`);
-      showToast('File PDF Kartu QR berhasil dibuat!', 'success');
+      doc.save(`KARTU_PRESENSI_QR_${new Date().toISOString().slice(0, 10)}.pdf`);
+      showToast(`Berhasil membuat file PDF untuk ${cardsToPrint.length} kartu QR siswa!`, 'success');
     } catch (e: any) {
+      console.error('PDF export error:', e);
       showToast('Gagal membuat PDF: ' + e.message, 'error');
+    } finally {
+      setExportingPdf(false);
     }
   };
 
@@ -268,10 +334,15 @@ export const QrCardPrintPage: React.FC = () => {
 
           <button
             onClick={handleExportPDF}
-            className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-xs font-semibold border border-indigo-200 dark:border-indigo-900/50 flex items-center gap-1.5 transition-colors"
+            disabled={exportingPdf || cardsToPrint.length === 0}
+            className="px-3.5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 text-xs font-semibold border border-indigo-200 dark:border-indigo-900/50 flex items-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export PDF</span>
+            {exportingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+            ) : (
+              <Download className="w-3.5 h-3.5" />
+            )}
+            <span>{exportingPdf ? 'Membuat PDF...' : 'Export PDF'}</span>
           </button>
 
           <button
@@ -361,7 +432,7 @@ export const QrCardPrintPage: React.FC = () => {
                       <span className="font-semibold">NISN:</span> {stu.nisn || '-'}
                     </div>
                     <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                      <span className="font-semibold">Kelas:</span> {stu.className || stu.classId}
+                      <span className="font-semibold">Kelas:</span> {resolveClassName(stu)}
                     </div>
                     <div className="pt-1">
                       <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[9px] font-bold">
@@ -371,14 +442,14 @@ export const QrCardPrintPage: React.FC = () => {
                   </div>
 
                   {/* QR SVG */}
-                  <div className="p-2 bg-white rounded-xl border border-slate-100 shadow-xs shrink-0 flex flex-col items-center">
+                  <div className="p-2 bg-white rounded-xl border border-slate-200 shadow-xs shrink-0 flex flex-col items-center">
                     <QRCodeSVG
-                      value={JSON.stringify({ type: 'student', studentId: stu.studentId })}
-                      size={72}
+                      value={stu.qrCode || stu.studentId}
+                      size={76}
                       level="M"
                       includeMargin={false}
                     />
-                    <span className="text-[8px] font-mono text-slate-400 mt-1">
+                    <span className="text-[9px] font-mono font-bold text-slate-600 mt-1">
                       {stu.nis}
                     </span>
                   </div>

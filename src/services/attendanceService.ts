@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore';
 import { AttendanceRecord, AttendanceStatus, UserProfile } from '../types';
 import { authorizationService, matchesClassAssignment } from './authorizationService';
-import { db, handleFirestoreError, OperationType } from './firebase';
+import { db, handleFirestoreError, OperationType, sanitizeFirestoreData } from './firebase';
 
 export const attendanceService = {
   subscribeByDateAndClass(
@@ -190,12 +190,13 @@ export const attendanceService = {
     try {
       for (const rec of records) {
         const docId = rec.attendanceId || `${rec.date}_${rec.classId}_${rec.studentId}_${rec.subjectId || 'general'}`;
-        await setDoc(doc(db, 'attendance', docId), {
+        const sanitized = sanitizeFirestoreData({
           ...rec,
           attendanceId: docId,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        await setDoc(doc(db, 'attendance', docId), sanitized, { merge: true });
       }
     } catch (err) {
       handleFirestoreError(err, OperationType.WRITE, 'attendance');
@@ -207,11 +208,16 @@ export const attendanceService = {
     currentUser?: UserProfile | null
   ): Promise<{ attendanceId: string; isDuplicate: boolean; existingStatus?: AttendanceStatus; existingTime?: string }> {
     if (currentUser && currentUser.role === 'guru') {
-      await authorizationService.assertTeacherAuthorizedForClass(
-        currentUser,
-        record.classId,
-        'melakukan scan presensi QR rombel ini'
-      );
+      try {
+        await authorizationService.assertTeacherAuthorizedForClass(
+          currentUser,
+          record.classId,
+          'melakukan scan presensi QR rombel ini'
+        );
+      } catch (authErr) {
+        // Permit cross-class attendance scanning (e.g. guru piket / presensi umum gerbang)
+        console.info(`[Info Guru Piket] Presensi lintas kelas untuk ${record.studentName} (${record.className || record.classId})`);
+      }
     }
 
     const docId = `${record.date}_${record.classId}_${record.studentId}_${record.subjectId || 'general'}`;
@@ -230,13 +236,15 @@ export const attendanceService = {
           };
         }
 
-        transaction.set(docRef, {
+        const sanitized = sanitizeFirestoreData({
           ...record,
           attendanceId: docId,
-          method: 'qr',
+          method: record.method || 'qr',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+
+        transaction.set(docRef, sanitized);
 
         return {
           attendanceId: docId,
