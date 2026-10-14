@@ -12,7 +12,7 @@ import {
   where,
 } from 'firebase/firestore';
 import * as XLSX from 'xlsx';
-import { Student, UserProfile } from '../types';
+import { SchoolClass, Student, UserProfile } from '../types';
 import { authorizationService, matchesClassAssignment, normalizeClassKey } from './authorizationService';
 import { memoryCache } from './cacheService';
 import { db, handleFirestoreError, OperationType } from './firebase';
@@ -697,50 +697,274 @@ export const studentService = {
     }
   },
 
-  async importFromExcel(file: File, defaultClassId: string, defaultClassName?: string): Promise<{ success: number; errors: string[] }> {
+  downloadTemplate(defaultClassName = 'Kelas 1A'): void {
+    const templateData = [
+      {
+        'No': 1,
+        'NIS': '24101',
+        'NISN': '0165123401',
+        'Nama Siswa': 'Ahmad Pratama (Contoh - Ganti/Hapus baris ini)',
+        'Jenis Kelamin (L/P)': 'L',
+        'Kelas': defaultClassName,
+        'Status': 'Aktif',
+      },
+      {
+        'No': 2,
+        'NIS': '24102',
+        'NISN': '0165123402',
+        'Nama Siswa': 'Siti Aisyah (Contoh - Ganti/Hapus baris ini)',
+        'Jenis Kelamin (L/P)': 'P',
+        'Kelas': defaultClassName,
+        'Status': 'Aktif',
+      },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    ws['!cols'] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 45 },
+      { wch: 22 },
+      { wch: 16 },
+      { wch: 14 },
+    ];
+
+    const guideData = [
+      { 'Panduan Pengisian Template Import Siswa': '1. Kolom "Nama Siswa" WAJIB diisi nama lengkap peserta didik.' },
+      { 'Panduan Pengisian Template Import Siswa': '2. Kolom "NIS" diisi Nomor Induk Siswa di sekolah (angka/teks unik).' },
+      { 'Panduan Pengisian Template Import Siswa': '3. Kolom "NISN" diisi Nomor Induk Siswa Nasional 10 digit (opsional).' },
+      { 'Panduan Pengisian Template Import Siswa': '4. Kolom "Jenis Kelamin (L/P)" diisi "L" (Laki-laki) atau "P" (Perempuan).' },
+      { 'Panduan Pengisian Template Import Siswa': `5. Kolom "Kelas" diisi nama kelas rombel (contoh: ${defaultClassName}). Jika dikosongkan, otomatis menggunakan rombel tujuan di aplikasi.` },
+      { 'Panduan Pengisian Template Import Siswa': '6. Kolom "Status" diisi "Aktif" atau "Non-Aktif" (bila dikosongkan otomatis "Aktif").' },
+      { 'Panduan Pengisian Template Import Siswa': '7. Anda dapat mengganti atau menghapus 2 baris contoh di lembar pertama sebelum mengunggah.' },
+    ];
+    const wsGuide = XLSX.utils.json_to_sheet(guideData);
+    wsGuide['!cols'] = [{ wch: 90 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template_Siswa');
+    XLSX.utils.book_append_sheet(wb, wsGuide, 'Petunjuk_Pengisian');
+    const safeName = defaultClassName.replace(/\s+/g, '_');
+    XLSX.writeFile(wb, `Template_Data_Siswa_${safeName}.xlsx`);
+  },
+
+  async parseExcelPreview(file: File): Promise<{
+    totalRows: number;
+    previewRows: Array<{
+      no: number;
+      nis: string;
+      nisn: string;
+      name: string;
+      gender: 'L' | 'P';
+      className: string;
+      status: string;
+    }>;
+    errors: string[];
+  }> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const targetSheetName =
+            workbook.SheetNames.find((s) => s.toLowerCase().includes('siswa') || s.toLowerCase().includes('data')) ||
+            workbook.SheetNames[0];
+          const sheet = workbook.Sheets[targetSheetName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(sheet);
+
+          const validRows: Array<{
+            no: number;
+            nis: string;
+            nisn: string;
+            name: string;
+            gender: 'L' | 'P';
+            className: string;
+            status: string;
+          }> = [];
+          const errors: string[] = [];
+
+          let idx = 1;
+          for (let i = 0; i < rawRows.length; i++) {
+            const row = rawRows[i];
+            const name = String(
+              row['Nama Siswa'] ||
+                row['Nama'] ||
+                row['nama_siswa'] ||
+                row['name'] ||
+                row['Name'] ||
+                row['NAMA'] ||
+                ''
+            ).trim();
+
+            // Skip guide rows or empty rows
+            if (!name) continue;
+            if (
+              name.toLowerCase().includes('(contoh') ||
+              name.toLowerCase().includes('hapus baris ini')
+            ) {
+              continue;
+            }
+
+            const nis = String(row['NIS'] || row['nis'] || row['No Induk'] || '').trim();
+            const nisn = String(row['NISN'] || row['nisn'] || '').trim();
+            const genderRaw = String(
+              row['Jenis Kelamin (L/P)'] ||
+                row['Jenis Kelamin'] ||
+                row['JK'] ||
+                row['gender'] ||
+                row['jk'] ||
+                row['L/P'] ||
+                'L'
+            ).trim().toUpperCase();
+            const gender: 'L' | 'P' =
+              genderRaw.startsWith('P') || genderRaw === 'PEREMPUAN' || genderRaw === 'WANITA' ? 'P' : 'L';
+            const className = String(
+              row['Kelas'] || row['className'] || row['ID Kelas'] || row['classId'] || row['Rombel'] || ''
+            ).trim();
+            const statusRaw = String(row['Status'] || row['status'] || 'Aktif').trim().toLowerCase();
+            const status =
+              statusRaw.includes('non') || statusRaw.includes('tidak') || statusRaw.includes('inact')
+                ? 'Non-Aktif'
+                : 'Aktif';
+
+            validRows.push({
+              no: idx++,
+              nis,
+              nisn,
+              name,
+              gender,
+              className,
+              status,
+            });
+          }
+
+          resolve({
+            totalRows: validRows.length,
+            previewRows: validRows.slice(0, 10),
+            errors,
+          });
+        } catch (err: any) {
+          reject(err);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsArrayBuffer(file);
+    });
+  },
+
+  async importFromExcel(
+    file: File,
+    defaultClassId: string,
+    defaultClassName?: string,
+    availableClasses?: SchoolClass[]
+  ): Promise<{ success: number; errors: string[] }> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async (e) => {
         try {
           const data = new Uint8Array(e.target?.result as ArrayBuffer);
           const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-          const rows: any[] = XLSX.utils.sheet_to_json(firstSheet);
+          const targetSheetName =
+            workbook.SheetNames.find((s) => s.toLowerCase().includes('siswa') || s.toLowerCase().includes('data')) ||
+            workbook.SheetNames[0];
+          const sheet = workbook.Sheets[targetSheetName];
+          const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
           let count = 0;
           const errors: string[] = [];
 
           for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const name = row['Nama'] || row['Nama Siswa'] || row['name'] || row['Name'];
-            const nis = String(row['NIS'] || row['nis'] || '').trim();
-            const nisn = String(row['NISN'] || row['nisn'] || '').trim();
-            const genderRaw = String(row['Jenis Kelamin'] || row['JK'] || row['gender'] || 'L').toUpperCase();
-            const gender = genderRaw.startsWith('P') ? 'P' : 'L';
-            const classId = row['ID Kelas'] || row['classId'] || defaultClassId;
-            const className = row['Kelas'] || row['className'] || defaultClassName || '';
+            const name = String(
+              row['Nama Siswa'] ||
+                row['Nama'] ||
+                row['nama_siswa'] ||
+                row['name'] ||
+                row['Name'] ||
+                row['NAMA'] ||
+                ''
+            ).trim();
 
             if (!name) {
-              errors.push(`Baris ${i + 2}: Nama siswa wajib diisi.`);
+              continue; // Skip blank rows
+            }
+
+            // Skip example instruction rows if not deleted by user
+            if (
+              name.toLowerCase().includes('(contoh') ||
+              name.toLowerCase().includes('hapus baris ini')
+            ) {
               continue;
             }
 
-            const studentId = `SISWA-${Date.now()}-${i}`;
+            const nis = String(row['NIS'] || row['nis'] || row['No Induk'] || '').trim();
+            const nisn = String(row['NISN'] || row['nisn'] || '').trim();
+            const genderRaw = String(
+              row['Jenis Kelamin (L/P)'] ||
+                row['Jenis Kelamin'] ||
+                row['JK'] ||
+                row['gender'] ||
+                row['jk'] ||
+                row['L/P'] ||
+                'L'
+            ).trim().toUpperCase();
+            const gender: 'L' | 'P' =
+              genderRaw.startsWith('P') || genderRaw === 'PEREMPUAN' || genderRaw === 'WANITA' ? 'P' : 'L';
+
+            // Match class from row or fallback to default class
+            let classId = defaultClassId;
+            let className = defaultClassName || '';
+
+            const rowClass = String(
+              row['Kelas'] || row['className'] || row['ID Kelas'] || row['classId'] || row['Rombel'] || ''
+            ).trim();
+
+            if (rowClass && availableClasses && availableClasses.length > 0) {
+              const matched = availableClasses.find(
+                (c) =>
+                  c.classId.toLowerCase() === rowClass.toLowerCase() ||
+                  c.name.toLowerCase() === rowClass.toLowerCase() ||
+                  c.name.toLowerCase().replace(/\s+/g, '') === rowClass.toLowerCase().replace(/\s+/g, '')
+              );
+              if (matched) {
+                classId = matched.classId;
+                className = matched.name;
+              }
+            }
+
+            const statusRaw = String(row['Status'] || row['status'] || 'Aktif').trim().toLowerCase();
+            const status: 'active' | 'inactive' =
+              statusRaw.includes('non') || statusRaw.includes('tidak') || statusRaw.includes('inact')
+                ? 'inactive'
+                : 'active';
+
+            const cleanNis = nis || `${24000 + i + Math.floor(Math.random() * 500)}`;
+            const studentId = `SISWA-${cleanNis}-${Date.now().toString().slice(-4)}-${i}`;
+
             await setDoc(doc(db, 'students', studentId), {
               studentId,
-              nis: nis || `${24000 + i}`,
-              nisn: nisn || `${3000000000 + i}`,
+              id: studentId,
+              nis: cleanNis,
+              nisn: nisn || '',
               name,
+              nama: name,
               gender,
               classId,
               className,
-              status: 'active',
-              qrCode: `STU-${studentId}`,
+              kelas: className,
+              status,
+              qrCode: cleanNis || studentId,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
-            });
+            }, { merge: true });
             count++;
           }
+
+          memoryCache.invalidate('students');
+          memoryCache.clear();
+
           resolve({ success: count, errors });
         } catch (error) {
           reject(error);
@@ -751,34 +975,45 @@ export const studentService = {
     });
   },
 
-  exportToExcel(students: Student[], fileName = 'Data_Siswa'): void {
+  exportToExcel(students: Student[], fileName = 'Data_Siswa', defaultClassName = 'Kelas 1A'): void {
+    if (!students || students.length === 0) {
+      // If there are no students to export, automatically download the ready-to-fill template
+      this.downloadTemplate(defaultClassName);
+      return;
+    }
+
     const exportData = students.map((s, index) => ({
       No: index + 1,
-      'NIS': s.nis,
-      'NISN': s.nisn,
-      'Nama Siswa': s.name,
-      'Jenis Kelamin': s.gender === 'L' ? 'Laki-laki' : 'Perempuan',
-      'Kelas': s.className || s.classId,
-      'Status': s.status === 'active' ? 'Aktif' : 'Non-Aktif',
-      'QR Code ID': s.qrCode || `STU-${s.studentId}`,
+      'NIS': s.nis || '',
+      'NISN': s.nisn || '',
+      'Nama Siswa': s.name || s.nama || '',
+      'Jenis Kelamin (L/P)': (s.gender || 'L').toUpperCase().startsWith('P') ? 'P' : 'L',
+      'Kelas': s.className || s.kelas || s.classId || defaultClassName,
+      'Status': s.status === 'inactive' ? 'Non-Aktif' : 'Aktif',
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
-    // Auto-fit column widths
     const colWidths = [
       { wch: 6 },
       { wch: 14 },
       { wch: 16 },
-      { wch: 28 },
+      { wch: 36 },
+      { wch: 22 },
       { wch: 16 },
       { wch: 14 },
-      { wch: 12 },
-      { wch: 20 },
     ];
     ws['!cols'] = colWidths;
 
+    const guideData = [
+      { 'Format Template Import Siswa': 'File ini berformat template resmi. Anda dapat mengedit data siswa di sheet "Data_Siswa" lalu mengimpornya kembali ke sistem.' },
+      { 'Format Template Import Siswa': 'Kolom yang didukung: No, NIS, NISN, Nama Siswa, Jenis Kelamin (L/P), Kelas, Status.' },
+    ];
+    const wsGuide = XLSX.utils.json_to_sheet(guideData);
+    wsGuide['!cols'] = [{ wch: 90 }];
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Siswa');
+    XLSX.utils.book_append_sheet(wb, ws, 'Data_Siswa');
+    XLSX.utils.book_append_sheet(wb, wsGuide, 'Petunjuk');
     XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   },
 };

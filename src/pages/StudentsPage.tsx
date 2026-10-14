@@ -1,16 +1,21 @@
 import {
   AlertCircle,
   Check,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
   Edit,
+  FileCheck,
   FileSpreadsheet,
+  FileText,
   Filter,
   MoreVertical,
   Plus,
   QrCode,
   Search,
+  Sparkles,
   Trash2,
   Upload,
   User,
@@ -69,6 +74,22 @@ export const StudentsPage: React.FC = () => {
   const [importClassId, setImportClassId] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<{
+    totalRows: number;
+    previewRows: Array<{
+      no: number;
+      nis: string;
+      nisn: string;
+      name: string;
+      gender: 'L' | 'P';
+      className: string;
+      status: string;
+    }>;
+    errors: string[];
+  } | null>(null);
+  const [parsingPreview, setParsingPreview] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -279,6 +300,63 @@ export const StudentsPage: React.FC = () => {
     }
   };
 
+  const getSelectedClassName = () => {
+    if (filterClass !== 'all') {
+      const c = classes.find((cls) => cls.classId === filterClass);
+      if (c) return c.name;
+    }
+    if (permittedClasses.length > 0) {
+      return permittedClasses[0].name;
+    }
+    return 'Kelas 1A';
+  };
+
+  const handleDownloadTemplate = () => {
+    const clsName = getSelectedClassName();
+    studentService.downloadTemplate(clsName);
+    showToast(`Template Excel resmi (${clsName}) berhasil diunduh. Silakan isi dan kirim melalui menu Import Excel.`, 'success');
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportDataExcel = () => {
+    const clsName = getSelectedClassName();
+    if (filteredStudents.length === 0) {
+      studentService.downloadTemplate(clsName);
+      showToast('Data siswa kosong. Mengunduh format Template Excel kosong untuk Anda isi...', 'info');
+      setIsExportMenuOpen(false);
+      return;
+    }
+    studentService.exportToExcel(
+      filteredStudents,
+      `Data_Siswa_${clsName.replace(/\s+/g, '_')}`,
+      clsName
+    );
+    showToast(`File Excel format template (${filteredStudents.length} siswa) berhasil diunduh.`, 'success');
+    setIsExportMenuOpen(false);
+  };
+
+  const handleFileChange = async (file: File | null) => {
+    setImportFile(file);
+    setPreviewError(null);
+    if (!file) {
+      setPreviewData(null);
+      return;
+    }
+    setParsingPreview(true);
+    try {
+      const res = await studentService.parseExcelPreview(file);
+      setPreviewData(res);
+      if (res.totalRows === 0) {
+        setPreviewError('Tidak ada baris data siswa yang terdeteksi. Pastikan kolom "Nama Siswa" terisi.');
+      }
+    } catch (err: any) {
+      setPreviewError('Gagal membaca file Excel: ' + (err.message || 'Pastikan file berekstensi .xlsx atau .xls'));
+      setPreviewData(null);
+    } finally {
+      setParsingPreview(false);
+    }
+  };
+
   const handleImportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile) {
@@ -289,28 +367,21 @@ export const StudentsPage: React.FC = () => {
     setActionLoading(true);
     try {
       const cls = classes.find((c) => c.classId === importClassId);
-      const res = await studentService.importFromExcel(importFile, importClassId, cls?.name);
-      showToast(`Berhasil mengimpor ${res.success} siswa!`, 'success');
+      const res = await studentService.importFromExcel(importFile, importClassId, cls?.name, classes);
+      showToast(`Berhasil mengirim & mengimpor ${res.success} siswa ke server database!`, 'success');
       if (res.errors.length > 0) {
-        showToast(`${res.errors.length} baris gagal/dilewati.`, 'warning');
+        showToast(`${res.errors.length} baris dilewati karena format tidak sesuai.`, 'warning');
       }
       setIsImportModalOpen(false);
       setImportFile(null);
+      setPreviewData(null);
+      setPreviewError(null);
       await loadData();
     } catch (err: any) {
       showToast('Gagal mengimpor file: ' + err.message, 'error');
     } finally {
       setActionLoading(false);
     }
-  };
-
-  const handleExportExcel = () => {
-    if (filteredStudents.length === 0) {
-      showToast('Tidak ada data siswa untuk diekspor.', 'warning');
-      return;
-    }
-    studentService.exportToExcel(filteredStudents, 'Data_Siswa');
-    showToast('File Excel berhasil diunduh.', 'success');
   };
 
   return (
@@ -334,21 +405,88 @@ export const StudentsPage: React.FC = () => {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Import Excel */}
           <button
-            onClick={() => setIsImportModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+            onClick={() => {
+              setPreviewData(null);
+              setPreviewError(null);
+              setImportFile(null);
+              setIsImportModalOpen(true);
+            }}
+            className="px-3.5 py-2 rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/40 hover:bg-blue-100/70 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            title="Import data siswa dari template file Excel"
           >
             <Upload className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
             <span>Import Excel</span>
           </button>
 
-          <button
-            onClick={handleExportExcel}
-            className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-            <span>Export Excel</span>
-          </button>
+          {/* Export Excel with Dropdown */}
+          <div className="relative">
+            <div className="inline-flex rounded-xl shadow-xs border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50/60 dark:bg-emerald-950/40">
+              <button
+                type="button"
+                onClick={handleExportDataExcel}
+                className="px-3.5 py-2 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer rounded-l-xl"
+                title="Export seluruh data siswa saat ini dalam format template Excel resmi"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Export Excel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsExportMenuOpen(!isExportMenuOpen)}
+                className="px-2 py-2 hover:bg-emerald-100/70 dark:hover:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200 transition-colors border-l border-emerald-200/80 dark:border-emerald-800 cursor-pointer rounded-r-xl"
+                title="Pilihan Format: Export Data atau Unduh Template Kosong"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Dropdown Options */}
+            {isExportMenuOpen && (
+              <div
+                className="absolute right-0 mt-1.5 w-72 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 py-1.5 z-50 text-xs animate-in fade-in slide-in-from-top-1 duration-150"
+                onMouseLeave={() => setIsExportMenuOpen(false)}
+              >
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="w-full px-3.5 py-2.5 text-left hover:bg-emerald-50 dark:hover:bg-emerald-950/50 flex items-start gap-2.5 transition-colors group cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>Unduh Template Excel</span>
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold">
+                        Format Baku
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                      Format resmi kosong siap diisi untuk dikirim/diunggah kembali ke sistem
+                    </div>
+                  </div>
+                </button>
+
+                <div className="my-1 border-t border-slate-100 dark:border-slate-800" />
+
+                <button
+                  type="button"
+                  onClick={handleExportDataExcel}
+                  className="w-full px-3.5 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/60 flex items-start gap-2.5 transition-colors group cursor-pointer"
+                >
+                  <Download className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5 group-hover:scale-110 transition-transform" />
+                  <div>
+                    <div className="font-bold text-slate-900 dark:text-white">
+                      Export Data Siswa Saat Ini
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                      Ekspor {filteredStudents.length} siswa dalam format template (bisa diedit & diimpor kembali)
+                    </div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
 
           {sampleStudentsCount > 0 && (
             <button
@@ -818,14 +956,46 @@ export const StudentsPage: React.FC = () => {
       {/* Import Excel Modal */}
       <Modal
         isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        title="Import Data Siswa dari Excel"
-        subtitle="Unggah file .xlsx berisi kolom Nama, NIS, NISN, dan Jenis Kelamin"
+        onClose={() => {
+          setIsImportModalOpen(false);
+          setImportFile(null);
+          setPreviewData(null);
+          setPreviewError(null);
+        }}
+        title="Import Data Siswa dari Template Excel"
+        subtitle="Kirim berkas template Excel untuk mendaftarkan data siswa secara instan ke server database"
+        maxWidth="2xl"
       >
         <form onSubmit={handleImportSubmit} className="space-y-4">
+          {/* Banner Unduh Template Resmi */}
+          <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-emerald-50 via-emerald-50/70 to-teal-50/60 dark:from-emerald-950/40 dark:via-emerald-950/30 dark:to-teal-950/30 border border-emerald-200/90 dark:border-emerald-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 mt-0.5">
+                <FileSpreadsheet className="w-4 h-4" />
+              </div>
+              <div>
+                <h5 className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                  Format Baku Import Excel
+                </h5>
+                <p className="text-[11px] text-emerald-900/80 dark:text-emerald-300/80 mt-0.5 leading-relaxed">
+                  Belum memiliki format file? Unduh template resmi kami yang telah terstruktur rapi.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadTemplate}
+              className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 shadow-xs transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Unduh Template (.xlsx)</span>
+            </button>
+          </div>
+
+          {/* Rombel Tujuan */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Masukkan ke Kelas / Rombel Tujuan {profile?.role === 'guru' ? 'Binaan' : '(SD Kelas 1 - 6)'}:
+              Rombel / Kelas Tujuan Utama {profile?.role === 'guru' ? 'Binaan' : '(SD Kelas 1 - 6)'}:
             </label>
             {profile?.role === 'guru' && permittedClasses.length === 1 ? (
               <div className="w-full px-3.5 py-2.5 rounded-xl border border-[#D9A62E]/50 bg-amber-50 dark:bg-[#172D4B] text-[#102A50] dark:text-[#FFD675] text-xs sm:text-sm font-bold flex items-center justify-between">
@@ -863,46 +1033,125 @@ export const StudentsPage: React.FC = () => {
                 ))}
               </select>
             )}
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+              Catatan: Jika kolom <code>Kelas</code> di dalam file Excel telah diisi nama rombel, data otomatis diarahkan ke kelas tersebut.
+            </p>
           </div>
 
+          {/* Input File */}
           <div>
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-              Pilih Berkas Excel (.xlsx / .xls)
+              Pilih Berkas Template Excel (.xlsx / .xls)
             </label>
             <input
               type="file"
               accept=".xlsx, .xls"
-              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+              onChange={(e) => handleFileChange(e.target.files?.[0] || null)}
               required
-              className="w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 dark:file:bg-blue-950 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100"
+              className="w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 dark:file:bg-blue-950 file:text-blue-700 dark:file:text-blue-300 hover:file:bg-blue-100 cursor-pointer border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800/50"
             />
           </div>
 
-          <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 text-xs space-y-1">
-            <span className="font-semibold block text-slate-800 dark:text-slate-200">
-              Format Kolom Excel yang Didukung:
-            </span>
-            <p>1. <code>Nama Siswa</code> atau <code>Nama</code> (Wajib)</p>
-            <p>2. <code>NIS</code> (Opsional/Otomatis)</p>
-            <p>3. <code>NISN</code> (Opsional)</p>
-            <p>4. <code>Jenis Kelamin</code> atau <code>JK</code> (L/P)</p>
-          </div>
+          {/* Loading parsing state */}
+          {parsingPreview && (
+            <div className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/50 flex items-center gap-2.5 text-xs text-blue-800 dark:text-blue-300">
+              <span className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin shrink-0" />
+              <span>Sedang membaca dan memvalidasi struktur berkas Excel...</span>
+            </div>
+          )}
+
+          {/* Error alert */}
+          {previewError && (
+            <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 flex items-center gap-2.5 text-xs text-red-800 dark:text-red-300">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+              <span>{previewError}</span>
+            </div>
+          )}
+
+          {/* Preview Data Siswa */}
+          {previewData && previewData.totalRows > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Terdeteksi {previewData.totalRows} Siswa Siap Diimpor</span>
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Pratinjau {Math.min(5, previewData.totalRows)} baris pertama
+                </span>
+              </div>
+
+              <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-100 dark:bg-slate-800 text-[11px] text-slate-700 dark:text-slate-300 font-bold sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2">No</th>
+                      <th className="px-3 py-2">NIS</th>
+                      <th className="px-3 py-2">NISN</th>
+                      <th className="px-3 py-2">Nama Siswa</th>
+                      <th className="px-3 py-2">JK</th>
+                      <th className="px-3 py-2">Kelas</th>
+                      <th className="px-3 py-2">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200">
+                    {previewData.previewRows.slice(0, 5).map((row, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <td className="px-3 py-1.5 text-slate-500">{row.no}</td>
+                        <td className="px-3 py-1.5 font-mono">{row.nis || '-'}</td>
+                        <td className="px-3 py-1.5 font-mono">{row.nisn || '-'}</td>
+                        <td className="px-3 py-1.5 font-semibold">{row.name}</td>
+                        <td className="px-3 py-1.5">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              row.gender === 'L'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300'
+                                : 'bg-pink-100 text-pink-800 dark:bg-pink-900/60 dark:text-pink-300'
+                            }`}
+                          >
+                            {row.gender}
+                          </span>
+                        </td>
+                        <td className="px-3 py-1.5 text-slate-600 dark:text-slate-400">
+                          {row.className || 'Ikuti Pilihan'}
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 font-semibold">
+                            {row.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-100 dark:border-slate-800">
             <button
               type="button"
-              onClick={() => setIsImportModalOpen(false)}
-              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              onClick={() => {
+                setIsImportModalOpen(false);
+                setImportFile(null);
+                setPreviewData(null);
+                setPreviewError(null);
+              }}
+              className="px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
             >
               Batal
             </button>
             <button
               type="submit"
-              disabled={actionLoading}
-              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50"
+              disabled={actionLoading || !importFile || (previewData !== null && previewData.totalRows === 0)}
+              className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-blue-500/20"
             >
               {actionLoading && <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
-              <span>Mulai Impor Siswa</span>
+              <span>
+                {previewData && previewData.totalRows > 0
+                  ? `Kirim & Simpan ${previewData.totalRows} Siswa ke Database`
+                  : 'Kirim Template Excel ke Server'}
+              </span>
             </button>
           </div>
         </form>
