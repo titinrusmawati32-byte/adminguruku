@@ -12,7 +12,6 @@ import {
   Database,
   GraduationCap,
   HeartHandshake,
-  Layers,
   Play,
   Plus,
   RefreshCw,
@@ -44,7 +43,6 @@ import { useNotification } from '../context/NotificationContext';
 import { agendaService } from '../services/agendaService';
 import { assessmentService } from '../services/assessmentService';
 import { attendanceService } from '../services/attendanceService';
-import { auditService } from '../services/auditService';
 import { guidanceService } from '../services/guidanceService';
 import { scheduleService } from '../services/scheduleService';
 import { studentService } from '../services/studentService';
@@ -52,7 +50,6 @@ import { subjectService } from '../services/subjectService';
 import {
   Assessment,
   AttendanceRecord,
-  AuditLog,
   Guidance,
   Schedule,
   Student,
@@ -78,7 +75,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [agendas, setAgendas] = useState<TeachingAgenda[]>([]);
   const [guidanceList, setGuidanceList] = useState<Guidance[]>([]);
-  const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
 
   const loadData = async () => {
     // If role is admin, AdminDashboardView handles its own optimized data loading
@@ -89,7 +85,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
 
     setLoading(true);
     try {
-      const [stu, sub, sch, att, ass, age, gui, logs] = await Promise.all([
+      const [stu, sub, sch, att, ass, age, gui] = await Promise.all([
         studentService.getAll(),
         subjectService.getAll(),
         scheduleService.getAll(),
@@ -97,7 +93,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
         assessmentService.getAll(),
         agendaService.getAll(),
         guidanceService.getAll(),
-        auditService.getRecent(5),
       ]);
       setStudents(stu);
       setSubjects(sub);
@@ -106,7 +101,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
       setAssessments(ass);
       setAgendas(age);
       setGuidanceList(gui);
-      setRecentLogs(logs);
     } catch (err) {
       console.error('Error loading dashboard data:', err);
     } finally {
@@ -754,44 +748,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onSelectTab }) => 
             <span>Buka Kalender Jadwal Mingguan</span>
             <ArrowUpRight className="w-3.5 h-3.5 text-[#66758A] dark:text-[#B4C1D4]" />
           </button>
-        </div>
-      </div>
-
-      {/* Recent Activities Feed */}
-      <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#10223D] border border-[#E0E5EC] dark:border-[#263B58] shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-[#D9A62E] dark:text-[#FFD675]" />
-            <h3 className="text-sm sm:text-base font-bold text-[#172A45] dark:text-[#F5F7FC]">
-              Aktivitas Sistem Terkini
-            </h3>
-          </div>
-          <span className="text-xs text-[#66758A] dark:text-[#B4C1D4]">Sinkronisasi Realtime Firestore</span>
-        </div>
-
-        <div className="divide-y divide-[#E0E5EC] dark:divide-[#263B58]">
-          {recentLogs.length === 0 ? (
-            <div className="text-xs text-[#66758A] dark:text-[#B4C1D4] py-3">
-              Belum ada log transaksi yang dicatat. Sistem siap digunakan.
-            </div>
-          ) : (
-            recentLogs.map((log) => (
-              <div key={log.logId} className="py-2.5 flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-2 h-2 rounded-full bg-[#D9A62E]" />
-                  <span className="font-semibold text-[#172A45] dark:text-[#F5F7FC]">
-                    {log.userName}
-                  </span>
-                  <span className="text-[#66758A] dark:text-[#B4C1D4]">
-                    {log.action} pada <code className="text-[#102A50] dark:text-[#FFD675] font-mono">{log.collection}</code>
-                  </span>
-                </div>
-                <span className="text-[#66758A] dark:text-[#B4C1D4] text-[11px] shrink-0">
-                  {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('id-ID') : ''}
-                </span>
-              </div>
-            ))
-          )}
         </div>
       </div>
     </div>

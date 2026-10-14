@@ -14,7 +14,6 @@ import {
   TrendingUp,
   Download,
   CheckCircle2,
-  Clock,
   Sparkles,
   BarChart3,
   RefreshCw,
@@ -45,7 +44,6 @@ import { assessmentService } from '../../services/assessmentService';
 import { agendaService } from '../../services/agendaService';
 import { guidanceService } from '../../services/guidanceService';
 import { classService } from '../../services/classService';
-import { auditService } from '../../services/auditService';
 import { authService } from '../../services/authService';
 import { getFriendlyErrorMessage } from '../../services/firebase';
 import {
@@ -56,7 +54,6 @@ import {
   TeachingAgenda,
   Guidance,
   SchoolClass,
-  AuditLog,
   UserProfile,
 } from '../../types';
 
@@ -79,12 +76,11 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
   const [agendas, setAgendas] = useState<TeachingAgenda[]>([]);
   const [guidanceList, setGuidanceList] = useState<Guidance[]>([]);
   const [teachers, setTeachers] = useState<UserProfile[]>([]);
-  const [recentLogs, setRecentLogs] = useState<AuditLog[]>([]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [stu, cls, sch, att, ass, agn, gui, tch, logs] = await Promise.all([
+      const [stu, cls, sch, att, ass, agn, gui, tch] = await Promise.all([
         studentService.getAll(),
         classService.getAll(),
         scheduleService.getAll(),
@@ -93,7 +89,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
         agendaService.getAll(),
         guidanceService.getAll(),
         authService.getAllTeachers(),
-        auditService.getRecent(8),
       ]);
       setStudents(stu);
       setClasses(cls);
@@ -103,7 +98,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
       setAgendas(agn);
       setGuidanceList(gui);
       setTeachers(tch);
-      setRecentLogs(logs);
     } catch (err: any) {
       console.error('Error loading admin monitoring data:', err);
       showToast('Gagal memuat data monitoring: ' + getFriendlyErrorMessage(err), 'error');
@@ -552,63 +546,6 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({ onSelect
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Log Aktivitas Guru Terkini */}
-      <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-blue-500" />
-              Aktivitas Guru Terkini (Audit Trail)
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Catatan riwayat input dan perubahan data oleh guru di Firestore
-            </p>
-          </div>
-        </div>
-
-        {recentLogs.length === 0 ? (
-          <div className="text-center py-8 text-xs text-slate-400">
-            Belum ada aktivitas baru yang tercatat.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 text-slate-400 uppercase tracking-wider">
-                  <th className="pb-3 font-semibold">Waktu</th>
-                  <th className="pb-3 font-semibold">Pengguna / Guru</th>
-                  <th className="pb-3 font-semibold">Tindakan</th>
-                  <th className="pb-3 font-semibold">Rincian</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {recentLogs.map((log) => (
-                  <tr key={log.logId} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-3 text-slate-500 font-mono">
-                      {new Date(log.timestamp).toLocaleTimeString('id-ID', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                    </td>
-                    <td className="py-3 font-semibold text-slate-800 dark:text-slate-200">
-                      {log.userName}
-                    </td>
-                    <td className="py-3">
-                      <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 font-semibold text-[11px]">
-                        {log.action}
-                      </span>
-                    </td>
-                    <td className="py-3 text-slate-600 dark:text-slate-300">
-                      {log.details}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
     </div>
   );
