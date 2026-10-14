@@ -21,6 +21,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import { soundService } from '../../services/soundService';
 import { studentService } from '../../services/studentService';
 import { AttendanceRecord, Student } from '../../types';
 
@@ -77,7 +78,7 @@ export const QrScannerView: React.FC<QrScannerViewProps> = ({
   const [currentFacing, setCurrentFacing] = useState<'environment' | 'user'>('environment');
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [isPaused, setIsPaused] = useState<boolean>(false);
-  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(soundService.isSoundEnabled());
   const [torchOn, setTorchOn] = useState<boolean>(false);
   const [torchSupported, setTorchSupported] = useState<boolean>(false);
   const [isInIframe, setIsInIframe] = useState<boolean>(false);
@@ -578,7 +579,8 @@ export const QrScannerView: React.FC<QrScannerViewProps> = ({
       setStatusMessage(
         `${matched.name} sudah melakukan presensi jam ${timeStr} (${alreadyAttended.status}).`
       );
-      speakVoice(`Siswa sudah presensi, ${matched.name}`);
+      const firstName = soundService.getFirstName(matched.name);
+      soundService.speakText(`${firstName} sudah presensi`);
       if (onDuplicateWarning) {
         onDuplicateWarning(matched, alreadyAttended);
       }
@@ -591,12 +593,11 @@ export const QrScannerView: React.FC<QrScannerViewProps> = ({
     setStatusMessage(`Menyimpan presensi untuk ${matched.name}...`);
 
     try {
-      // Immediate feedback: play sound and announce name
+      // Immediate feedback: play sound and announce "[Nama Depan] Hadir" in Indonesian
       recentScansMapRef.current.set(identifier.toLowerCase(), now);
-      playBeep();
       setScanStatus('success');
       setStatusMessage(`Presensi berhasil dicatat pada ${currentTime}`);
-      speakVoice(`${matched.name}, Hadir`);
+      soundService.speakAttendance(matched.name, 'Hadir');
 
       // Asynchronous background database save
       const result = await onRecordSuccess(matched, currentTime);
@@ -746,7 +747,11 @@ export const QrScannerView: React.FC<QrScannerViewProps> = ({
           {/* Audio Speech Toggle */}
           <button
             type="button"
-            onClick={() => setSoundEnabled(!soundEnabled)}
+            onClick={() => {
+              const next = !soundEnabled;
+              setSoundEnabled(next);
+              soundService.setSoundEnabled(next);
+            }}
             title={soundEnabled ? 'Suara Presensi Aktif (Klik untuk Bisukan)' : 'Suara Presensi Senyap'}
             className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
               soundEnabled

@@ -18,6 +18,8 @@ import {
   Table,
   UserCheck,
   Users,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { AttendanceRealtimeFeed } from '../components/attendance/AttendanceRealtimeFeed';
@@ -29,6 +31,7 @@ import { attendanceService } from '../services/attendanceService';
 import { auditService } from '../services/auditService';
 import { classService, groupClassesBySDGrade } from '../services/classService';
 import { scheduleService } from '../services/scheduleService';
+import { soundService } from '../services/soundService';
 import { studentService } from '../services/studentService';
 import {
   AttendanceRecord,
@@ -76,6 +79,9 @@ export const AttendancePage: React.FC = () => {
   const [attendanceMap, setAttendanceMap] = useState<
     Record<string, { status: AttendanceStatus; notes: string; method: string }>
   >({});
+
+  // Sound feedback state (Indonesian speech)
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(soundService.isSoundEnabled());
 
   // Search filter for table view
   const [tableSearch, setTableSearch] = useState('');
@@ -239,6 +245,9 @@ export const AttendancePage: React.FC = () => {
   const handleQuickStatusChange = async (studentId: string, status: AttendanceStatus, notes?: string) => {
     try {
       const stu = students.find((s) => s.studentId === studentId);
+      if (stu?.name) {
+        soundService.speakAttendance(stu.name, status);
+      }
       const docId = `${selectedDate}_${selectedClassId}_${studentId}_${currentSchedule?.subjectId || 'general'}`;
 
       await attendanceService.saveBatch([
@@ -268,6 +277,7 @@ export const AttendancePage: React.FC = () => {
 
   // Handle Mark Student Present from "Belum Presensi" list
   const handleMarkStudentPresent = async (student: Student) => {
+    soundService.speakAttendance(student.name, 'Hadir');
     const currentTime = new Date().toLocaleTimeString('id-ID', {
       hour: '2-digit',
       minute: '2-digit',
@@ -293,6 +303,10 @@ export const AttendancePage: React.FC = () => {
 
   // Table View status update
   const handleStatusChangeInTable = (studentId: string, status: AttendanceStatus) => {
+    const stu = students.find((s) => s.studentId === studentId);
+    if (stu?.name) {
+      soundService.speakAttendance(stu.name, status);
+    }
     setAttendanceMap((prev) => ({
       ...prev,
       [studentId]: {
@@ -313,6 +327,7 @@ export const AttendancePage: React.FC = () => {
   };
 
   const handleMarkAllHadirInTable = () => {
+    soundService.speakText('Semua siswa ditandai hadir');
     setAttendanceMap((prev) => {
       const next = { ...prev };
       students.forEach((s) => {
@@ -367,6 +382,7 @@ export const AttendancePage: React.FC = () => {
       );
 
       showToast(`Presensi ${students.length} siswa berhasil disimpan ke Firestore!`, 'success');
+      soundService.speakText(`Presensi ${students.length} siswa berhasil disimpan`);
     } catch (err: any) {
       showToast('Gagal menyimpan presensi: ' + err.message, 'error');
     } finally {
@@ -520,6 +536,34 @@ export const AttendancePage: React.FC = () => {
             >
               <Table className={`w-4 h-4 ${viewMode === 'table' ? 'text-[#D9A62E] dark:text-[#FFD675]' : ''}`} />
               <span>Input Manual & Tabel Rombel</span>
+            </button>
+
+            {/* Audio Feedback Button */}
+            <button
+              type="button"
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                soundService.setSoundEnabled(next);
+                if (next) {
+                  soundService.speakAttendance('Galih', 'Hadir');
+                }
+              }}
+              title={
+                soundEnabled
+                  ? 'Audio Presensi Bahasa Indonesia Aktif (Menyebut Nama Depan: Contoh "Galih Hadir")'
+                  : 'Audio Presensi Dibisukan (Klik untuk Mengaktifkan)'
+              }
+              className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer border ${
+                soundEnabled
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/25'
+                  : 'bg-slate-200/60 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 hover:bg-slate-200'
+              }`}
+            >
+              {soundEnabled ? <Volume2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> : <VolumeX className="w-3.5 h-3.5 text-slate-400" />}
+              <span className="hidden md:inline text-[11px]">
+                {soundEnabled ? 'Audio ON (Galih Hadir)' : 'Audio Mute'}
+              </span>
             </button>
           </div>
         </div>
