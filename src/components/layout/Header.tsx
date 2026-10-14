@@ -87,7 +87,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#ECE9E1]/60 dark:bg-[#10223D] text-xs text-[#172A45] dark:text-[#B4C1D4] border border-[#E0E5EC] dark:border-[#263B58]">
           <span className="font-medium">{todayStr}</span>
           <span className="w-1 h-1 rounded-full bg-[#D9A62E] dark:bg-[#E8B949]" />
-          <span className="font-semibold text-[#102A50] dark:text-[#E8B949]">Sem. Ganjil 2024/2025</span>
+          <span className="font-semibold text-[#102A50] dark:text-[#E8B949]">Tahun Ajaran 2026/2027</span>
         </div>
 
         {/* Quick shortcut button */}
