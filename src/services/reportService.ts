@@ -27,7 +27,7 @@ export const reportService = {
       format: 'a4',
     });
 
-    const school = meta.schoolName || 'SD NEGERI HARAPAN BANGSA';
+    const school = meta.schoolName || 'SD NEGERI SUMBEREJO 04';
     const pageWidth = doc.internal.pageSize.getWidth();
 
     // Header Kop Surat
@@ -171,7 +171,7 @@ export const reportService = {
     // Structured excel format with title & metadata at top
     const data: any[][] = [];
 
-    data.push([meta.schoolName || 'SD NEGERI HARAPAN BANGSA']);
+    data.push([meta.schoolName || 'SD NEGERI SUMBEREJO 04']);
     data.push([meta.title.toUpperCase()]);
     data.push([]);
 

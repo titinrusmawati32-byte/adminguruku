@@ -273,7 +273,7 @@ export const ReportsPage: React.FC = () => {
       teacherName: profile?.displayName || 'Guru Pengampu / Wali Kelas',
       className: selectedClassName,
       subjectName: selectedSubjectName,
-      academicYear: '2024/2025',
+      academicYear: '2026/2027',
       semester: 'Ganjil',
       orientation: reportTableData.orientation,
     });
@@ -291,7 +291,7 @@ export const ReportsPage: React.FC = () => {
       teacherName: profile?.displayName || 'Guru Pengampu / Wali Kelas',
       className: selectedClassName,
       subjectName: selectedSubjectName,
-      academicYear: '2024/2025',
+      academicYear: '2026/2027',
       semester: 'Ganjil',
     });
     showToast('File laporan Excel (.xlsx) berhasil diunduh.', 'success');

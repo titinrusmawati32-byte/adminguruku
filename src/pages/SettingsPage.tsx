@@ -80,8 +80,8 @@ export const SettingsPage: React.FC = () => {
   };
 
   // School profile settings
-  const [schoolName, setSchoolName] = useState('SD NEGERI HARAPAN BANGSA');
-  const [academicYear, setAcademicYear] = useState('2024/2025');
+  const [schoolName, setSchoolName] = useState('SD NEGERI SUMBEREJO 04');
+  const [academicYear, setAcademicYear] = useState('2026/2027');
   const [semester, setSemester] = useState('Ganjil');
 
 
